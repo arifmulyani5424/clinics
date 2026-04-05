@@ -1,0 +1,2701 @@
+diff --git a/electron/database.js b/electron/database.js
+index 304818a..10d4232 100644
+--- a/electron/database.js
++++ b/electron/database.js
+@@ -5,7 +5,7 @@ const { app } = require('electron');
+ 
+ function initDb() {
+   const dbPath = path.join(app.getPath('userData'), 'clinic_data.sqlite');
+-  
++
+   // Ensure backup directory exists
+   const backupDir = path.join(app.getPath('userData'), 'backups');
+   if (!fs.existsSync(backupDir)) {
+@@ -195,7 +195,7 @@ function initDb() {
+       name: 'seed_default_data',
+       run: (db) => {
+         db.prepare("INSERT OR IGNORE INTO users (full_name, username, password_hash, role, status) VALUES (?, ?, ?, ?, ?)").run('Super Admin', 'admin', 'admin123', 'Admin', 'Active');
+-        
++
+         const dosages = ['OD', 'BD', 'TDS', 'QID', 'SOS', 'HS', 'AC', 'PC', 'ایک صبح کو', 'ایک صبح شام', 'ایک ناشٹے سے پہلے', 'ایک صبح ناشتے کے بعد', 'ایک گولی ہر ہفتے کھا لیں'];
+         const insertDosage = db.prepare("INSERT OR IGNORE INTO dosage_presets (text_urdu) VALUES (?)");
+         dosages.forEach(d => insertDosage.run(d));
+@@ -222,28 +222,199 @@ function initDb() {
+       name: 'add_new_medicines_v1',
+       run: (db) => {
+         const newMedicines = [
+-          'Tab Epicetam 750 mg',
+-          'Tab Lalik 500 mg',
+-          'Tab Tegral 200 mg',
+-          'Tab Rivotril 0.5 mg',
+-          'Inj Kefzole 125 mg',
+-          'Inj Kefzole 250 mg',
+-          'Inj Kefzole 1 gm',
+-          'Inj Kovax 250 mg',
+-          'Inj Lincocin 600 mg',
+-          'Inj Valosef 1 gm',
+-          'Inj Plabolyte-M 1 L',
+-          'Inj Paeds Sol 100 ml',
+-          'Inj Normal Saline 150 ml',
+-          'Inj Tromit 30 mg',
+-          'Inj Glykin 500 mg',
+-          'Inj Epigran 250 mg',
+-          'Inj Dexa 2 cc',
+-          'Inj Lumark 500 mg'
++          'Tab Epicetam 750 mg', 'Tab Lalik 500 mg', 'Tab Tegral 200 mg', 'Tab Rivotril 0.5 mg',
++          'Inj Kefzole 125 mg', 'Inj Kefzole 250 mg', 'Inj Kefzole 1 gm', 'Inj Kovax 250 mg',
++          'Inj Lincocin 600 mg', 'Inj Valosef 1 gm', 'Inj Plabolyte-M 1 L', 'Inj Paeds Sol 100 ml',
++          'Inj Normal Saline 150 ml', 'Inj Tromit 30 mg', 'Inj Glykin 500 mg', 'Inj Epigran 250 mg',
++          'Inj Dexa 2 cc', 'Inj Lumark 500 mg'
+         ];
+         const insertMed = db.prepare('INSERT OR IGNORE INTO medicine_presets (name) VALUES (?)');
+         newMedicines.forEach(m => insertMed.run(m));
+       }
++    },
++    {
++      name: 'v_saas_upgrade',
++      run: (db) => {
++        db.exec(`
++          CREATE TABLE IF NOT EXISTS wards (
++            ward_id INTEGER PRIMARY KEY AUTOINCREMENT,
++            ward_name TEXT NOT NULL,
++            ward_type TEXT DEFAULT 'General',
++            total_beds INTEGER DEFAULT 0,
++            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
++          );
++
++          CREATE TABLE IF NOT EXISTS beds (
++            bed_id INTEGER PRIMARY KEY AUTOINCREMENT,
++            ward_id INTEGER NOT NULL,
++            bed_number TEXT NOT NULL,
++            status TEXT DEFAULT 'Available',
++            notes TEXT,
++            FOREIGN KEY(ward_id) REFERENCES wards(ward_id)
++          );
++
++          CREATE TABLE IF NOT EXISTS ipd_admissions (
++            admission_id INTEGER PRIMARY KEY AUTOINCREMENT,
++            patient_id INTEGER,
++            patient_name TEXT NOT NULL,
++            patient_phone TEXT,
++            doctor_id INTEGER,
++            doctor_name TEXT,
++            ward_id INTEGER,
++            bed_id INTEGER,
++            diagnosis TEXT,
++            admission_date TEXT,
++            discharge_date TEXT,
++            status TEXT DEFAULT 'Admitted',
++            notes TEXT,
++            total_bill REAL DEFAULT 0,
++            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
++            FOREIGN KEY(ward_id) REFERENCES wards(ward_id),
++            FOREIGN KEY(bed_id) REFERENCES beds(bed_id)
++          );
++
++          CREATE TABLE IF NOT EXISTS lab_tests_catalog (
++            test_id INTEGER PRIMARY KEY AUTOINCREMENT,
++            test_name TEXT NOT NULL UNIQUE,
++            test_category TEXT,
++            normal_range TEXT,
++            unit TEXT,
++            price REAL DEFAULT 0
++          );
++
++          CREATE TABLE IF NOT EXISTS patient_lab_results (
++            result_id INTEGER PRIMARY KEY AUTOINCREMENT,
++            patient_id INTEGER,
++            patient_name TEXT NOT NULL,
++            test_id INTEGER,
++            test_name TEXT NOT NULL,
++            result_value TEXT,
++            result_status TEXT DEFAULT 'Pending',
++            notes TEXT,
++            ordered_by TEXT,
++            result_date TEXT,
++            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
++            FOREIGN KEY(test_id) REFERENCES lab_tests_catalog(test_id)
++          );
++
++          CREATE TABLE IF NOT EXISTS pharmacy_inventory (
++            item_id INTEGER PRIMARY KEY AUTOINCREMENT,
++            medicine_name TEXT NOT NULL,
++            batch_number TEXT,
++            quantity INTEGER DEFAULT 0,
++            unit TEXT DEFAULT 'Tablet',
++            purchase_price REAL DEFAULT 0,
++            selling_price REAL DEFAULT 0,
++            expiry_date TEXT,
++            supplier TEXT,
++            low_stock_threshold INTEGER DEFAULT 10,
++            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
++          );
++
++          CREATE TABLE IF NOT EXISTS pharmacy_sales (
++            sale_id INTEGER PRIMARY KEY AUTOINCREMENT,
++            patient_name TEXT,
++            patient_id INTEGER,
++            item_id INTEGER,
++            medicine_name TEXT NOT NULL,
++            quantity_sold INTEGER DEFAULT 1,
++            unit_price REAL DEFAULT 0,
++            total_price REAL DEFAULT 0,
++            payment_method TEXT DEFAULT 'Cash',
++            sale_date TEXT,
++            sale_time TEXT,
++            sold_by TEXT,
++            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
++            FOREIGN KEY(item_id) REFERENCES pharmacy_inventory(item_id)
++          );
++
++          CREATE TABLE IF NOT EXISTS activity_logs (
++            log_id INTEGER PRIMARY KEY AUTOINCREMENT,
++            user_name TEXT,
++            action TEXT NOT NULL,
++            entity_type TEXT,
++            entity_id INTEGER,
++            details TEXT,
++            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
++          );
++
++          INSERT OR IGNORE INTO wards (ward_name, ward_type, total_beds) VALUES ('General Ward', 'General', 10);
++          INSERT OR IGNORE INTO wards (ward_name, ward_type, total_beds) VALUES ('Private Ward', 'Private', 5);
++          INSERT OR IGNORE INTO wards (ward_name, ward_type, total_beds) VALUES ('ICU', 'ICU', 4);
++
++          INSERT OR IGNORE INTO lab_tests_catalog (test_name, test_category, normal_range, unit, price) VALUES ('CBC (Complete Blood Count)', 'Haematology', 'See Report', '', 500);
++          INSERT OR IGNORE INTO lab_tests_catalog (test_name, test_category, normal_range, unit, price) VALUES ('Blood Glucose Fasting', 'Biochemistry', '70-100 mg/dL', 'mg/dL', 200);
++          INSERT OR IGNORE INTO lab_tests_catalog (test_name, test_category, normal_range, unit, price) VALUES ('Urine R/E', 'Microbiology', 'Normal', '', 300);
++          INSERT OR IGNORE INTO lab_tests_catalog (test_name, test_category, normal_range, unit, price) VALUES ('Lipid Profile', 'Biochemistry', 'See Report', 'mg/dL', 800);
++          INSERT OR IGNORE INTO lab_tests_catalog (test_name, test_category, normal_range, unit, price) VALUES ('LFTs (Liver Function Tests)', 'Biochemistry', 'See Report', '', 700);
++          INSERT OR IGNORE INTO lab_tests_catalog (test_name, test_category, normal_range, unit, price) VALUES ('KFTs (Kidney Function Tests)', 'Biochemistry', 'See Report', '', 700);
++          INSERT OR IGNORE INTO lab_tests_catalog (test_name, test_category, normal_range, unit, price) VALUES ('Thyroid Profile (TSH)', 'Endocrinology', '0.4-4.0 mIU/L', 'mIU/L', 900);
++          INSERT OR IGNORE INTO lab_tests_catalog (test_name, test_category, normal_range, unit, price) VALUES ('ESR', 'Haematology', 'M:0-15, F:0-25', 'mm/hr', 150);
++          INSERT OR IGNORE INTO lab_tests_catalog (test_name, test_category, normal_range, unit, price) VALUES ('HbA1c', 'Biochemistry', '<5.7%', '%', 1000);
++          INSERT OR IGNORE INTO lab_tests_catalog (test_name, test_category, normal_range, unit, price) VALUES ('ECG', 'Cardiology', 'Normal', '', 400);
++
++          CREATE INDEX IF NOT EXISTS idx_admissions_status ON ipd_admissions(status);
++          CREATE INDEX IF NOT EXISTS idx_lab_results_patient ON patient_lab_results(patient_name);
++          CREATE INDEX IF NOT EXISTS idx_pharmacy_medicine ON pharmacy_inventory(medicine_name);
++        `);
++      }
++    },
++    {
++      name: 'v_ipd_billing',
++      run: (db) => {
++        // Safely add new columns to ipd_admissions
++        const cols = db.prepare("PRAGMA table_info(ipd_admissions)").all().map(c => c.name);
++        if (!cols.includes('patient_status')) db.prepare("ALTER TABLE ipd_admissions ADD COLUMN patient_status TEXT DEFAULT 'Stable'").run();
++        if (!cols.includes('age'))            db.prepare("ALTER TABLE ipd_admissions ADD COLUMN age TEXT").run();
++        if (!cols.includes('gender'))         db.prepare("ALTER TABLE ipd_admissions ADD COLUMN gender TEXT DEFAULT 'Male'").run();
++        if (!cols.includes('paid_amount'))    db.prepare("ALTER TABLE ipd_admissions ADD COLUMN paid_amount REAL DEFAULT 0").run();
++
++        db.exec(`
++          CREATE TABLE IF NOT EXISTS ipd_billing_items (
++            item_id INTEGER PRIMARY KEY AUTOINCREMENT,
++            admission_id INTEGER NOT NULL,
++            item_type TEXT NOT NULL,
++            description TEXT NOT NULL,
++            quantity REAL DEFAULT 1,
++            unit_price REAL DEFAULT 0,
++            total_price REAL DEFAULT 0,
++            added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
++            FOREIGN KEY(admission_id) REFERENCES ipd_admissions(admission_id)
++          );
++
++          CREATE TABLE IF NOT EXISTS ipd_payments (
++            payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
++            admission_id INTEGER NOT NULL,
++            amount REAL DEFAULT 0,
++            payment_method TEXT DEFAULT 'Cash',
++            payment_date TEXT,
++            notes TEXT,
++            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
++            FOREIGN KEY(admission_id) REFERENCES ipd_admissions(admission_id)
++          );
++
++          CREATE TABLE IF NOT EXISTS ipd_rate_presets (
++            preset_id INTEGER PRIMARY KEY AUTOINCREMENT,
++            item_type TEXT NOT NULL,
++            description TEXT NOT NULL,
++            unit_price REAL DEFAULT 0,
++            unit TEXT DEFAULT 'per day'
++          );
++
++          INSERT OR IGNORE INTO ipd_rate_presets (item_type, description, unit_price, unit) VALUES ('Room',      'General Ward Room Charge',   1500, 'per day');
++          INSERT OR IGNORE INTO ipd_rate_presets (item_type, description, unit_price, unit) VALUES ('Room',      'Private Room Charge',         3000, 'per day');
++          INSERT OR IGNORE INTO ipd_rate_presets (item_type, description, unit_price, unit) VALUES ('Room',      'ICU Charge',                  6000, 'per day');
++          INSERT OR IGNORE INTO ipd_rate_presets (item_type, description, unit_price, unit) VALUES ('Doctor',    'Doctor Round Fee',            1000, 'per visit');
++          INSERT OR IGNORE INTO ipd_rate_presets (item_type, description, unit_price, unit) VALUES ('Oxygen',    'Oxygen Therapy',               500, 'per hour');
++          INSERT OR IGNORE INTO ipd_rate_presets (item_type, description, unit_price, unit) VALUES ('Procedure', 'Dressing / Minor Procedure',   500, 'per sitting');
++          INSERT OR IGNORE INTO ipd_rate_presets (item_type, description, unit_price, unit) VALUES ('Procedure', 'IV Cannula Insertion',         300, 'per procedure');
++          INSERT OR IGNORE INTO ipd_rate_presets (item_type, description, unit_price, unit) VALUES ('Procedure', 'Nebulization',                 400, 'per session');
++          INSERT OR IGNORE INTO ipd_rate_presets (item_type, description, unit_price, unit) VALUES ('Nursing',   'Nursing Care Charge',          500, 'per day');
++
++          CREATE INDEX IF NOT EXISTS idx_billing_items_admission ON ipd_billing_items(admission_id);
++          CREATE INDEX IF NOT EXISTS idx_ipd_payments_admission   ON ipd_payments(admission_id);
++        `);
++      }
+     }
+   ];
+ 
+@@ -259,7 +430,7 @@ function initDb() {
+         })();
+       } catch (err) {
+         console.error(`Migration failed: ${m.name}`, err);
+-        throw err; // Stop init if migration fails
++        throw err;
+       }
+     }
+   });
+@@ -271,7 +442,7 @@ function backupDatabase() {
+   const dbPath = path.join(app.getPath('userData'), 'clinic_data.sqlite');
+   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+   const backupPath = path.join(app.getPath('userData'), 'backups', `clinic_backup_${timestamp}.sqlite`);
+-  
++
+   if (fs.existsSync(dbPath)) {
+     fs.copyFileSync(dbPath, backupPath);
+     return backupPath;
+diff --git a/src/index.css b/src/index.css
+index 51a4aa8..10ccab6 100644
+--- a/src/index.css
++++ b/src/index.css
+@@ -1,36 +1,46 @@
+-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap');
++@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap');
+ 
+ :root {
+-  /* Modern Medical Dashboard Palette */
+-  --primary: #0F6D63;
+-  /* Deep teal green */
+-  --primary-light: rgba(15, 109, 99, 0.1);
+-  --accent: #F4C542;
+-  /* Soft golden yellow */
+-  --success: #10b981;
+-  --danger: #ef4444;
+-
+-  --bg-gradient: #F5E9D6;
+-  /* Soft warm beige/cream background */
++  /* E-Educate Dashboard Palette */
++  --primary: #0D9488;        /* Teal/Green */
++  --primary-dark: #0F766E;
++  --primary-light: rgba(13, 148, 136, 0.08);
++  --primary-glow: rgba(13, 148, 136, 0.15);
++
++  --accent: #1E293B;         /* Dark Navy */
++  --accent-light: rgba(30, 41, 59, 0.08);
++
++  --success: #10B981;
++  --success-light: rgba(16, 185, 129, 0.08);
++  --danger: #EF4444;
++  --danger-light: rgba(239, 68, 68, 0.08);
++  --purple: #8B5CF6;
++  --purple-light: rgba(139, 92, 246, 0.08);
++  --blue: #3B82F6;
++  --blue-light: rgba(59, 130, 246, 0.08);
++
++  --bg: #F1F5F9;
+   --glass-bg: #FFFFFF;
+-  /* White cards */
+-  --glass-border: rgba(0, 0, 0, 0.04);
++  --glass-border: rgba(0, 0, 0, 0.06);
+   --card-blur: blur(0px);
+-  /* Solid cards, no blur needed */
+ 
+-  --text-main: #1F2933;
+-  /* Dark charcoal */
+-  --text-muted: #6B7280;
+-  /* Muted grey */
++  --text-main: #1E293B;
++  --text-muted: #94A3B8;
++  --text-secondary: #64748B;
+ 
+-  --shadow-warm: 0 4px 24px rgba(0, 0, 0, 0.04);
+-  --radius-lg: 32px;
+-  /* Increased for that 'round' look */
++  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
++  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
++  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
++  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
++
++  --radius: 12px;
++  --radius-lg: 16px;
++  --radius-xl: 20px;
+   --radius-pill: 9999px;
+ 
+-  --sidebar-width: 280px;
++  --sidebar-width: 250px;
+ 
+-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
++  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+   color: var(--text-main);
+ }
+ 
+@@ -43,10 +53,10 @@
+ body {
+   overflow: hidden;
+   height: 100vh;
+-  background: var(--bg-gradient);
++  background: var(--bg);
+   display: flex;
+-  align-items: center;
+-  justify-content: center;
++  align-items: stretch;
++  justify-content: stretch;
+ }
+ 
+ #root {
+@@ -60,163 +70,201 @@ body {
+   line-height: 2 !important;
+ }
+ 
+-/* Layout Components - Floating Frame Effect */
++/* =====================================================
++   LAYOUT — E-Educate Style
++   ===================================================== */
+ .app-layout {
+-  padding: 1.5rem;
+   width: 100%;
+   height: 100vh;
+   display: flex;
+-  gap: 1.5rem;
+-  max-width: 1600px;
+-  margin: 0 auto;
++  gap: 0;
++  max-width: 100%;
++  margin: 0;
++  padding: 0;
+ }
+ 
++/* =====================================================
++   SIDEBAR — White with section labels
++   ===================================================== */
+ .sidebar {
+   width: var(--sidebar-width);
+   height: 100%;
+-  background: #F2EFE9;
+-  /* Soft light neutral tone */
+-  border: 1px solid var(--glass-border);
+-  border-radius: var(--radius-lg);
++  background: #FFFFFF;
++  border-right: 1px solid var(--glass-border);
+   display: flex;
+   flex-direction: column;
+-  padding: 2.5rem 1.5rem;
+-  box-shadow: var(--shadow-warm);
++  padding: 1.25rem 0.75rem;
+   flex-shrink: 0;
+   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+   overflow-y: auto;
+   overflow-x: hidden;
++  box-shadow: none;
++  border-radius: 0;
+ }
+ 
+ .sidebar::-webkit-scrollbar {
+-  width: 4px;
++  width: 3px;
+ }
+ 
+ .sidebar::-webkit-scrollbar-thumb {
+-  background: rgba(0, 0, 0, 0.1);
++  background: rgba(0, 0, 0, 0.08);
+   border-radius: 10px;
+ }
+ 
+ .sidebar.collapsed {
+-  width: 70px;
+-  padding: 2.5rem 0.5rem;
++  width: 68px;
++  padding: 1.25rem 0.5rem;
+   align-items: center;
+ }
+ 
+-.sidebar.collapsed .nav-text {
+-  display: none;
+-}
++.sidebar.collapsed .nav-text { display: none; }
++.sidebar.collapsed .nav-section-label { display: none; }
+ 
+ .sidebar.collapsed .brand {
+-  margin-bottom: 3rem;
++  margin-bottom: 1.5rem;
+   justify-content: center;
+ }
+ 
+ .sidebar.collapsed .nav-item {
+   justify-content: center;
+-  padding: 1rem;
++  padding: 0.7rem;
+ }
+ 
+-.sidebar.collapsed .nav-item svg {
+-  margin: 0;
+-}
++.sidebar.collapsed .nav-item svg { margin: 0; }
+ 
+-.btn-icon {
+-  background: transparent;
+-  border: none;
++/* Sidebar section labels */
++.nav-section-label {
++  font-size: 0.65rem;
++  font-weight: 700;
+   color: var(--text-muted);
+-  cursor: pointer;
+-  padding: 0.5rem;
+-  border-radius: 8px;
++  text-transform: uppercase;
++  letter-spacing: 0.1em;
++  padding: 0.75rem 1rem 0.4rem 1rem;
++  margin-top: 0.5rem;
++}
++
++/* =====================================================
++   NAVIGATION ITEMS
++   ===================================================== */
++.brand {
+   display: flex;
+   align-items: center;
+-  justify-content: center;
+-  transition: all 0.2s;
++  gap: 0.75rem;
++  font-weight: 700;
++  font-size: 1.1rem;
++  color: var(--text-main);
++  margin-bottom: 1.5rem;
++  padding-left: 0.75rem;
++  letter-spacing: -0.02em;
++  white-space: nowrap;
+ }
+ 
+-.btn-icon:hover {
+-  background: rgba(0, 0, 0, 0.05);
+-  color: var(--primary);
++.nav-item {
++  display: flex;
++  align-items: center;
++  gap: 0.75rem;
++  padding: 0.6rem 1rem;
++  border-radius: var(--radius);
++  color: var(--text-secondary);
++  text-decoration: none;
++  font-weight: 500;
++  cursor: pointer;
++  transition: all 0.2s ease;
++  margin-bottom: 0.15rem;
++  background: transparent;
++  font-size: 0.875rem;
++  border: none;
++  position: relative;
+ }
+ 
+-.btn-danger-icon {
+-  color: var(--danger);
++.nav-item:hover {
++  background: var(--primary-light);
++  color: var(--primary-dark);
+ }
+ 
+-.btn-danger-icon:hover {
+-  background: rgba(239, 68, 68, 0.1);
+-  color: var(--danger);
++.nav-item.active {
++  background: var(--primary-light);
++  color: var(--primary-dark);
++  font-weight: 600;
+ }
+ 
++.nav-item.active::before {
++  content: '';
++  position: absolute;
++  left: -0.75rem;
++  top: 50%;
++  transform: translateY(-50%);
++  width: 3px;
++  height: 60%;
++  background: var(--primary);
++  border-radius: 0 4px 4px 0;
++}
++
++.nav-item svg {
++  flex-shrink: 0;
++  opacity: 0.7;
++}
++
++.nav-item.active svg {
++  opacity: 1;
++  color: var(--primary);
++}
++
++/* =====================================================
++   MAIN CONTENT AREA
++   ===================================================== */
+ .main-content {
+   flex: 1;
+   height: 100%;
+   overflow-y: auto;
+   position: relative;
+-  border-radius: var(--radius-lg);
+-  padding: 1rem;
+-  /* Custom Scrollbar for modern look */
++  padding: 1.25rem 1.5rem;
++  background: var(--bg);
++  border-radius: 0;
+ }
+ 
+ .main-content::-webkit-scrollbar {
+-  width: 6px;
++  width: 5px;
+ }
+ 
+ .main-content::-webkit-scrollbar-thumb {
+-  background: rgba(0, 0, 0, 0.1);
++  background: rgba(0, 0, 0, 0.08);
+   border-radius: 10px;
+ }
+ 
+-/* Navigation */
+-.brand {
++/* =====================================================
++   BTN-ICON
++   ===================================================== */
++.btn-icon {
++  background: transparent;
++  border: none;
++  color: var(--text-muted);
++  cursor: pointer;
++  padding: 0.4rem;
++  border-radius: 8px;
+   display: flex;
+   align-items: center;
+-  gap: 1rem;
+-  font-weight: 700;
+-  font-size: 1.75rem;
+-  color: var(--text-main);
+-  margin-bottom: 4rem;
+-  padding-left: 0.75rem;
+-  letter-spacing: -0.04em;
+-  white-space: nowrap;
++  justify-content: center;
++  transition: all 0.2s;
+ }
+ 
+-.nav-item {
+-  display: flex;
+-  align-items: center;
+-  gap: 1rem;
+-  padding: 1rem 1.5rem;
+-  border-radius: var(--radius-pill);
++.btn-icon:hover {
++  background: rgba(0, 0, 0, 0.04);
+   color: var(--text-main);
+-  text-decoration: none;
+-  font-weight: 600;
+-  cursor: pointer;
+-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+-  margin-bottom: 0.75rem;
+-  background: transparent;
+-  font-size: 0.95rem;
+-}
+-
+-.nav-item:hover {
+-  background: var(--primary-light);
+-  color: var(--primary);
+-  transform: translateX(4px);
+ }
+ 
+-.nav-item.active {
+-  background: var(--primary);
+-  color: white;
+-  box-shadow: 0 4px 12px rgba(15, 109, 99, 0.3);
+-}
++.btn-danger-icon { color: var(--danger); }
++.btn-danger-icon:hover { background: var(--danger-light); color: var(--danger); }
+ 
+-/* Unified Workspace Layout */
++/* =====================================================
++   UNIFIED WORKSPACE
++   ===================================================== */
+ .unified-workspace {
+-  background: var(--glass-bg);
+-  backdrop-filter: var(--card-blur);
+-  border-radius: var(--radius-lg);
+-  border: 1px solid var(--glass-border);
+-  box-shadow: var(--shadow-warm);
+-  padding: 1.5rem;
++  background: transparent;
++  border-radius: 0;
++  border: none;
++  box-shadow: none;
++  padding: 0;
+   margin: 0;
+   width: 100%;
+   max-width: 100%;
+@@ -228,7 +276,7 @@ body {
+ .workspace-section {
+   padding-bottom: 1.25rem;
+   margin-bottom: 1.25rem;
+-  border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
++  border-bottom: 1px solid var(--glass-border);
+ }
+ 
+ .workspace-section:last-child {
+@@ -238,136 +286,142 @@ body {
+ }
+ 
+ .unified-workspace .section-title {
+-  margin-bottom: 1.5rem;
+-  font-size: 1.25rem;
++  margin-bottom: 1.25rem;
++  font-size: 1.1rem;
+ }
+ 
++/* =====================================================
++   MEDICINE TABLE
++   ===================================================== */
+ .medicine-table {
+-  background: #F9F9F9;
+-  border-radius: 16px;
++  background: #FAFBFC;
++  border-radius: var(--radius);
+   border: 1px solid var(--glass-border);
+-  padding: 1rem;
++  padding: 0.75rem;
+ }
+ 
+ .medicine-table-header label {
+   color: var(--text-muted);
+-  font-size: 0.7rem;
+-  font-weight: 700;
++  font-size: 0.65rem;
++  font-weight: 600;
+   text-transform: uppercase;
+   letter-spacing: 0.05em;
+ }
+ 
+ .clean-row {
+-  margin-bottom: 0.5rem;
+-  padding: 0.5rem;
++  margin-bottom: 0.35rem;
++  padding: 0.35rem;
+   background: transparent;
+   border: none;
+   box-shadow: none;
+ }
+ 
+-.clean-row:last-child {
+-  margin-bottom: 0;
+-}
++.clean-row:last-child { margin-bottom: 0; }
+ 
+ .clean-row input {
+-  padding: 0.6rem 1rem;
+-  border-radius: 10px;
+-  font-size: 0.9rem;
++  padding: 0.5rem 0.75rem;
++  border-radius: 8px;
++  font-size: 0.875rem;
+   background: white;
+-  border: 1px solid rgba(0, 0, 0, 0.08);
++  border: 1px solid var(--glass-border);
+ }
+ 
+ .clean-row input:focus {
+   border-color: var(--primary);
+-  box-shadow: 0 0 0 2px rgba(15, 109, 99, 0.2);
++  box-shadow: 0 0 0 3px var(--primary-glow);
+ }
+ 
++/* Tag buttons (advice presets) */
+ .tag-btn {
+   background: white;
+   border: 1px solid var(--glass-border);
+-  color: var(--text-muted);
+-  font-weight: 600;
+-  padding: 0.5rem 1rem;
+-  border-radius: 100px;
+-  font-size: 0.85rem;
++  color: var(--text-secondary);
++  font-weight: 500;
++  padding: 0.4rem 0.85rem;
++  border-radius: var(--radius-pill);
++  font-size: 0.8rem;
+   transition: all 0.2s;
++  cursor: pointer;
+ }
+ 
+ .tag-btn:hover {
+-  border-color: rgba(0, 0, 0, 0.2);
+-  color: var(--text-main);
+-  transform: translateY(-2px);
++  border-color: var(--primary);
++  color: var(--primary-dark);
++  background: var(--primary-light);
+ }
+ 
+ .tag-btn.active {
+   background: var(--primary);
+   color: white;
+   border-color: var(--primary);
+-  box-shadow: 0 4px 12px rgba(15, 109, 99, 0.2);
+ }
+ 
+-/* UI Components */
++/* =====================================================
++   UI COMPONENTS
++   ===================================================== */
+ .tab-content {
+-  animation: slideUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
++  animation: slideUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+ }
+ 
+ @keyframes slideUp {
+-  from {
+-    opacity: 0;
+-    transform: translateY(20px);
+-  }
+-
+-  to {
+-    opacity: 1;
+-    transform: translateY(0);
+-  }
++  from { opacity: 0; transform: translateY(12px); }
++  to { opacity: 1; transform: translateY(0); }
+ }
+ 
++/* Cards — E-Educate clean white style */
+ .card {
+   background: var(--glass-bg);
+-  backdrop-filter: var(--card-blur);
+   border-radius: var(--radius-lg);
+   border: 1px solid var(--glass-border);
+-  box-shadow: var(--shadow-warm);
+-  padding: 1.5rem;
+-  margin-bottom: 1.5rem;
+-  transition: transform 0.3s ease;
++  box-shadow: var(--shadow-card);
++  padding: 1.25rem;
++  margin-bottom: 1rem;
++  transition: all 0.2s ease;
++}
++
++.card:hover {
++  box-shadow: var(--shadow-md);
+ }
+ 
+ .grid-2 {
+   display: grid;
+   grid-template-columns: 1fr 1fr;
+-  gap: 2rem;
++  gap: 1.5rem;
+ }
+ 
+ .grid-responsive {
+   display: flex;
+   flex-wrap: wrap;
+-  gap: 2rem;
++  gap: 1rem;
+ }
+ 
+-.grid-responsive>.card {
+-  flex: 1 1 500px;
++.grid-responsive > .card {
++  flex: 1 1 280px;
+   margin-bottom: 0;
+ }
+ 
+ @media (max-width: 1200px) {
+-  .grid-responsive>.card {
++  .grid-responsive > .card {
+     flex: 1 1 100%;
+   }
+ }
+ 
++/* =====================================================
++   FORM ELEMENTS
++   ===================================================== */
+ input,
+ select,
+ textarea {
+   width: 100%;
+-  padding: 1rem 1.5rem;
+-  border-radius: 18px;
+-  border: 1px solid rgba(0, 0, 0, 0.05);
+-  font-size: 1rem;
++  padding: 0.65rem 0.9rem;
++  border-radius: var(--radius);
++  border: 1px solid #E2E8F0;
++  font-size: 0.875rem;
+   outline: none;
+-  transition: all 0.3s;
+-  background: rgba(255, 255, 255, 0.4);
++  transition: all 0.2s;
++  background: #FFFFFF;
++  color: var(--text-main);
++  font-family: 'Inter', sans-serif;
+ }
+ 
+ input:focus,
+@@ -375,196 +429,241 @@ select:focus,
+ textarea:focus {
+   border-color: var(--primary);
+   background: white;
+-  box-shadow: 0 4px 12px rgba(15, 109, 99, 0.1);
++  box-shadow: 0 0 0 3px var(--primary-glow);
++}
++
++input::placeholder,
++textarea::placeholder {
++  color: var(--text-muted);
+ }
+ 
+ label {
+   display: block;
+   font-size: 0.75rem;
+-  font-weight: 700;
+-  color: var(--text-muted);
+-  margin-bottom: 0.75rem;
++  font-weight: 600;
++  color: var(--text-secondary);
++  margin-bottom: 0.4rem;
+   text-transform: uppercase;
+-  letter-spacing: 0.08em;
+-  padding-left: 0.5rem;
++  letter-spacing: 0.04em;
++  padding-left: 0.1rem;
+ }
+ 
++/* =====================================================
++   BUTTONS — E-Educate Style
++   ===================================================== */
+ .btn {
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+-  gap: 0.75rem;
+-  padding: 1rem 2rem;
+-  border-radius: var(--radius-pill);
+-  font-weight: 700;
++  gap: 0.5rem;
++  padding: 0.6rem 1.25rem;
++  border-radius: var(--radius);
++  font-weight: 600;
+   cursor: pointer;
+-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
++  transition: all 0.2s ease;
+   border: none;
+-  font-size: 0.95rem;
++  font-size: 0.85rem;
++  font-family: 'Inter', sans-serif;
+ }
+ 
+ .btn-primary {
+   background: var(--primary);
+   color: white;
+-  box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.2);
++  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+ }
+ 
+ .btn-primary:hover {
+-  transform: translateY(-4px);
+-  box-shadow: 0 12px 24px -6px rgba(15, 109, 99, 0.35);
++  background: var(--primary-dark);
++  transform: translateY(-1px);
++  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35);
+ }
+ 
+ .btn-secondary {
+   background: var(--accent);
+-  color: var(--text-main);
+-  box-shadow: 0 8px 16px -4px rgba(244, 197, 66, 0.4);
++  color: white;
++  box-shadow: 0 2px 8px rgba(30, 41, 59, 0.2);
+ }
+ 
+ .btn-secondary:hover {
+-  transform: translateY(-4px);
+-  box-shadow: 0 12px 24px -6px rgba(244, 197, 66, 0.5);
++  background: #334155;
++  transform: translateY(-1px);
+ }
+ 
+ .btn-outline {
+-  background: #F3F4F6;
+-  border: 1px solid #E5E7EB;
+-  color: var(--text-main);
++  background: white;
++  border: 1px solid #E2E8F0;
++  color: var(--text-secondary);
+ }
+ 
+ .btn-outline:hover {
+-  background: #E5E7EB;
++  background: #F8FAFC;
++  border-color: #CBD5E1;
++  color: var(--text-main);
+ }
+ 
+ .btn-danger {
+-  background: rgba(239, 68, 68, 0.08);
++  background: var(--danger-light);
+   color: var(--danger);
+-  border: 1px solid rgba(239, 68, 68, 0.1);
++  border: 1px solid rgba(239, 68, 68, 0.15);
+ }
+ 
+ .btn-danger:hover {
+-  background: rgba(239, 68, 68, 0.15);
++  background: rgba(239, 68, 68, 0.12);
++}
++
++.btn-success {
++  background: var(--success);
++  color: white;
+ }
+ 
++/* =====================================================
++   SECTION HEADERS
++   ===================================================== */
+ .section-header {
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+-  margin-bottom: 2.5rem;
+-  padding: 0 0.5rem;
++  margin-bottom: 1.5rem;
++  padding: 0;
+ }
+ 
+ .section-title {
+-  font-size: 1.75rem;
+-  font-weight: 800;
++  font-size: 1.35rem;
++  font-weight: 700;
+   color: var(--text-main);
+-  letter-spacing: -0.04em;
++  letter-spacing: -0.02em;
+ }
+ 
+-/* Medicine Row Refinement - Smart Strips */
++/* =====================================================
++   MEDICINE ROW
++   ===================================================== */
+ .med-row {
+   display: flex;
+-  gap: 1.25rem;
++  gap: 0.75rem;
+   align-items: center;
+-  margin-bottom: 0.85rem;
+-  padding: 0.85rem 1.25rem;
+-  background: rgba(255, 255, 255, 0.4);
+-  border-radius: 20px;
++  margin-bottom: 0.5rem;
++  padding: 0.6rem 0.75rem;
++  background: white;
++  border-radius: var(--radius);
+   border: 1px solid var(--glass-border);
+-  box-shadow: 0 4px 20px -5px rgba(0, 0, 0, 0.03);
+-  transition: all 0.3s ease;
++  transition: all 0.2s ease;
+   position: relative;
+-  /* Added for z-index management */
+ }
+ 
+ .med-row:focus-within {
+   z-index: 1000;
+-  /* Bring active row to front to show dropdown */
+-  background: white;
++  border-color: var(--primary);
++  box-shadow: 0 0 0 3px var(--primary-glow);
+ }
+ 
+ .med-row:hover {
+-  background: white;
+-  transform: translateY(-2px);
+-  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.06);
++  border-color: #CBD5E1;
+ }
+ 
+-.med-row>div {
+-  flex: 1;
+-}
++.med-row > div { flex: 1; }
+ 
+ .med-row label {
+   font-size: 0.6rem;
+-  font-weight: 800;
+-  margin-bottom: 0.35rem;
++  font-weight: 700;
++  margin-bottom: 0.25rem;
+   color: var(--text-muted);
+-  opacity: 0.8;
+ }
+ 
+ .med-row input {
+-  padding: 0.6rem 1rem;
+-  border-radius: 14px;
+-  font-size: 0.9rem;
+-  background: rgba(0, 0, 0, 0.02);
++  padding: 0.5rem 0.75rem;
++  border-radius: 8px;
++  font-size: 0.85rem;
++  background: #FAFBFC;
++  border: 1px solid var(--glass-border);
+ }
+ 
+-.med-row input:focus {
+-  background: white;
+-}
++.med-row input:focus { background: white; }
+ 
+ .med-row .btn-danger {
+-  width: 42px;
+-  height: 42px;
++  width: 36px;
++  height: 36px;
+   padding: 0;
+   flex-shrink: 0;
+-  border-radius: 12px;
+-  margin-top: 1.2rem;
+-  background: rgba(239, 68, 68, 0.05);
++  border-radius: 8px;
++  margin-top: 1rem;
++  background: var(--danger-light);
+ }
+ 
+-/* Master Data Table */
++/* =====================================================
++   DATA TABLE — Clean E-Educate Style
++   ===================================================== */
+ .data-table {
+   width: 100%;
+   border-collapse: separate;
+-  border-spacing: 0 0.75rem;
++  border-spacing: 0;
+ }
+ 
+ .data-table th {
+   text-align: left;
+-  padding: 1rem 1.5rem;
+-  font-size: 0.75rem;
++  padding: 0.75rem 1rem;
++  font-size: 0.7rem;
+   text-transform: uppercase;
+-  letter-spacing: 0.1em;
++  letter-spacing: 0.06em;
+   color: var(--text-muted);
+-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
++  font-weight: 600;
++  border-bottom: 1px solid var(--glass-border);
++  background: #FAFBFC;
++}
++
++.data-table th:first-child {
++  border-radius: var(--radius) 0 0 0;
++}
++
++.data-table th:last-child {
++  border-radius: 0 var(--radius) 0 0;
+ }
+ 
+ .data-table td {
+-  padding: 1.5rem;
+-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+-  background: rgba(255, 255, 255, 0.3);
++  padding: 0.85rem 1rem;
++  border-bottom: 1px solid var(--glass-border);
++  background: white;
++  font-size: 0.875rem;
++  vertical-align: middle;
++}
++
++.data-table tr:last-child td {
++  border-bottom: none;
+ }
+ 
+ .data-table tr td:first-child {
+-  border-radius: 20px 0 0 20px;
+-  border: 1px solid var(--glass-border);
+-  border-right: none;
++  border-radius: 0;
++  border: none;
++  border-bottom: 1px solid var(--glass-border);
+ }
+ 
+ .data-table tr td:last-child {
+-  border-radius: 0 20px 20px 0;
+-  border: 1px solid var(--glass-border);
+-  border-left: none;
++  border-radius: 0;
++  border: none;
++  border-bottom: 1px solid var(--glass-border);
+ }
+ 
+-/* Print Preview Overlay */
+-.preview-overlay {
+-  position: fixed;
+-  top: 0;
+-  left: 0;
++.data-table tr:last-child td:first-child { border-bottom: none; }
++.data-table tr:last-child td:last-child { border-bottom: none; }
++
++.data-table tbody tr {
++  transition: background 0.15s ease;
++}
++
++.data-table tbody tr:hover td {
++  background: #F8FAFC;
++}
++
++/* =====================================================
++   PRINT PREVIEW OVERLAY
++   ===================================================== */
++.preview-overlay {
++  position: fixed;
++  top: 0;
++  left: 0;
+   right: 0;
+   bottom: 0;
+-  background: rgba(0, 0, 0, 0.4);
+-  backdrop-filter: blur(30px);
++  background: rgba(0, 0, 0, 0.5);
++  backdrop-filter: blur(20px);
+   z-index: 1000;
+   display: flex;
+   flex-direction: column;
+@@ -584,35 +683,14 @@ label {
+   border-radius: 8px;
+ }
+ 
+-#print-area {
+-  display: none;
+-}
++#print-area { display: none; }
+ 
+ @media print {
+-  @page {
+-    margin: 0;
+-    size: auto;
+-  }
+-
+-  body {
+-    background: white !important;
+-    overflow: visible !important;
+-  }
+-
+-  .app-layout,
+-  .preview-overlay {
+-    display: none !important;
+-  }
+-
+-  /* Force hidden for all elements except the one being printed */
+-  #root > *:not(#print-area):not(.print-only) {
+-    display: none !important;
+-  }
+-
+-  #print-area {
+-    display: none !important;
+-  }
+-
++  @page { margin: 0; size: auto; }
++  body { background: white !important; overflow: visible !important; }
++  .app-layout, .preview-overlay { display: none !important; }
++  #root > *:not(#print-area):not(.print-only) { display: none !important; }
++  #print-area { display: none !important; }
+   body:not(.printing-receipt) #print-area {
+     display: block !important;
+     visibility: visible !important;
+@@ -624,12 +702,11 @@ label {
+     color: black !important;
+     overflow: hidden;
+   }
+-
+   .pad-content {
+     position: absolute;
+     top: calc(63mm + var(--top-offset, 0mm));
+     left: calc(20mm + var(--left-offset, 0mm));
+-    width: 175mm; /* Explicit width to prevent cutoff on A4 (210 - 20 - 15) */
++    width: 175mm;
+     bottom: 68mm;
+     display: flex;
+     flex-direction: column;
+@@ -648,20 +725,11 @@ label {
+   line-height: 1.4;
+ }
+ 
+-.print-flex {
+-  display: flex;
+-  justify-content: space-between;
+-}
++.print-flex { display: flex; justify-content: space-between; }
+ 
+-.symptoms-section {
+-  margin-bottom: 3mm;
+-  font-size: 9pt;
+-}
++.symptoms-section { margin-bottom: 3mm; font-size: 9pt; }
+ 
+-.rx-section {
+-  flex: 1;
+-  margin-bottom: 3mm;
+-}
++.rx-section { flex: 1; margin-bottom: 3mm; }
+ 
+ .section-title-print {
+   font-size: 10.5pt;
+@@ -672,11 +740,7 @@ label {
+   padding-right: 8mm;
+ }
+ 
+-.rx-list {
+-  padding-left: 16px;
+-  margin: 0;
+-  font-size: 9pt;
+-}
++.rx-list { padding-left: 16px; margin: 0; font-size: 9pt; }
+ 
+ .rx-item {
+   display: flex;
+@@ -685,24 +749,12 @@ label {
+   margin-bottom: 1.5mm;
+ }
+ 
+-.med-name {
+-  font-weight: bold;
+-}
++.med-name { font-weight: bold; }
++.med-details { text-align: right; }
+ 
+-.med-details {
+-  text-align: right;
+-}
+-
+-.test-list {
+-  list-style-type: disc;
+-  padding-left: 16px;
+-  font-size: 9pt;
+-  margin: 0 0 3mm 0;
+-}
++.test-list { list-style-type: disc; padding-left: 16px; font-size: 9pt; margin: 0 0 3mm 0; }
+ 
+-.advice-table-section {
+-  margin-top: auto;
+-}
++.advice-table-section { margin-top: auto; }
+ 
+ .advice-table {
+   width: 100%;
+@@ -720,11 +772,7 @@ label {
+   word-wrap: break-word;
+ }
+ 
+-.advice-label {
+-  font-weight: bold;
+-  width: 35%;
+-  font-size: 9pt;
+-}
++.advice-label { font-weight: bold; width: 35%; font-size: 9pt; }
+ 
+ .urdu-text-small {
+   font-family: 'Noto Nastaliq Urdu', serif;
+@@ -757,137 +805,112 @@ label {
+   z-index: 10;
+ }
+ 
+-.print-only {
+-  display: none !important;
+-}
++.print-only { display: none !important; }
+ 
+ @media print {
+-  .print-only {
+-    display: none !important;
+-  }
+-  
+-  body.printing-receipt .print-only {
+-    display: block !important;
+-  }
++  .print-only { display: none !important; }
++  body.printing-receipt .print-only { display: block !important; }
+ }
+ 
+-.extra-advice {
+-  margin-top: 2mm;
+-  border: none !important;
+-}
+-
+-.extra-advice p {
+-  font-size: 7pt !important;
+-}
++.extra-advice { margin-top: 2mm; border: none !important; }
++.extra-advice p { font-size: 7pt !important; }
+ 
+ .date-value {
+   padding-left: 14mm;
+-  /* Adjusted indentation for Date line */
+   font-weight: bold;
+ }
+ 
+-/* System & Update UI */
++/* =====================================================
++   STATUS TAGS & BADGES
++   ===================================================== */
+ .status-tag {
+   display: inline-flex;
+   align-items: center;
+   padding: 0.25rem 0.75rem;
+-  border-radius: 100px;
+-  font-size: 0.75rem;
+-  font-weight: 700;
++  border-radius: var(--radius-pill);
++  font-size: 0.7rem;
++  font-weight: 600;
++  letter-spacing: 0.02em;
+ }
+ 
+-.status-tag.success {
+-  background: rgba(16, 185, 129, 0.1);
+-  color: var(--success);
+-}
++.status-tag.success { background: var(--success-light); color: var(--success); }
++.status-tag.warning { background: rgba(245, 158, 11, 0.1); color: #B45309; }
++.status-tag.info { background: var(--blue-light); color: var(--blue); }
++.status-tag.danger { background: var(--danger-light); color: var(--danger); }
+ 
+ .system-card-grid {
+   display: grid;
+-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+-  gap: 1.5rem;
++  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
++  gap: 1rem;
+   margin-top: 1rem;
+ }
+ 
+ .version-badge {
+   background: var(--primary);
+   color: white;
+-  padding: 0.5rem 1rem;
+-  border-radius: 12px;
+-  font-weight: bold;
++  padding: 0.4rem 0.85rem;
++  border-radius: var(--radius);
++  font-weight: 600;
++  font-size: 0.85rem;
+ }
+ 
+ /* Autocomplete/Search Dropdown */
+ .search-results {
+   position: absolute;
+-  top: calc(100% + 5px);
++  top: calc(100% + 4px);
+   left: 0;
+   right: 0;
+   background: white;
+   border: 1px solid var(--glass-border);
+-  border-radius: 12px;
+-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
++  border-radius: var(--radius);
++  box-shadow: var(--shadow-lg);
+   z-index: 9999;
+-  max-height: 250px;
++  max-height: 220px;
+   overflow-y: auto;
+   overflow-x: hidden;
+ }
+ 
+ .search-result-item {
+-  padding: 1.25rem 1.75rem;
++  padding: 0.75rem 1rem;
+   cursor: pointer;
+-  transition: all 0.3s;
++  transition: all 0.15s;
+   border-bottom: 1px solid rgba(0, 0, 0, 0.03);
+   font-weight: 500;
++  font-size: 0.875rem;
+ }
+ 
+-.search-result-item:hover {
+-  background: var(--accent);
+-  color: var(--text-main);
+-  padding-left: 2.25rem;
+-}
++.search-result-item:last-child { border-bottom: none; }
+ 
+-/* Status Tags */
+-.status-tag {
+-  padding: 0.25rem 0.75rem;
+-  border-radius: 100px;
+-  font-size: 0.75rem;
+-  font-weight: 700;
+-  text-transform: uppercase;
+-}
+-.status-tag.success { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+-.status-tag.warning {
+-  background: rgba(244, 197, 66, 0.1);
+-  color: #B45309;
++.search-result-item:hover {
++  background: var(--primary-light);
++  color: var(--primary-dark);
+ }
+ 
+ /* Reminder Badges */
+ .badge-reminder-sent {
+   display: inline-flex;
+   align-items: center;
+-  padding: 0.25rem 0.6rem;
+-  border-radius: 100px;
+-  font-size: 0.70rem;
+-  font-weight: 700;
+-  background: rgba(16, 185, 129, 0.1);
++  padding: 0.2rem 0.55rem;
++  border-radius: var(--radius-pill);
++  font-size: 0.7rem;
++  font-weight: 600;
++  background: var(--success-light);
+   color: #065F46;
+-  border: 1px solid rgba(16, 185, 129, 0.2);
++  border: 1px solid rgba(16, 185, 129, 0.15);
+ }
+ 
+ .badge-reminder-pending {
+   display: inline-flex;
+   align-items: center;
+-  padding: 0.25rem 0.6rem;
+-  border-radius: 100px;
+-  font-size: 0.70rem;
+-  font-weight: 700;
+-  background: rgba(244, 197, 66, 0.1);
++  padding: 0.2rem 0.55rem;
++  border-radius: var(--radius-pill);
++  font-size: 0.7rem;
++  font-weight: 600;
++  background: rgba(245, 158, 11, 0.08);
+   color: #B45309;
+-  border: 1px solid rgba(244, 197, 66, 0.2);
++  border: 1px solid rgba(245, 158, 11, 0.15);
+ }
+ 
+-.status-tag.info { background: rgba(15, 109, 99, 0.1); color: var(--primary); }
+-.status-tag.danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
+-
+ /* Token Badge */
+ .token-badge {
+   background: var(--primary);
+@@ -898,18 +921,20 @@ label {
+   display: flex;
+   align-items: center;
+   justify-content: center;
+-  font-weight: 800;
+-  font-size: 0.85rem;
++  font-weight: 700;
++  font-size: 0.8rem;
+ }
+ 
+-/* Modal Overlay */
++/* =====================================================
++   MODAL OVERLAY — Clean centered popup
++   ===================================================== */
+ .modal-overlay {
+   position: fixed;
+   top: 0;
+   left: 0;
+   right: 0;
+   bottom: 0;
+-  background: rgba(0,0,0,0.4);
++  background: rgba(15, 23, 42, 0.5);
+   backdrop-filter: blur(8px);
+   z-index: 2000;
+   display: flex;
+@@ -922,10 +947,39 @@ label {
+   width: 100%;
+ }
+ 
++.modal-card {
++  background: white;
++  border-radius: var(--radius-xl);
++  box-shadow: var(--shadow-lg);
++  width: 100%;
++  overflow: hidden;
++}
++
++.modal-header {
++  display: flex;
++  justify-content: space-between;
++  align-items: center;
++  padding: 1.25rem 1.5rem;
++  border-bottom: 1px solid var(--glass-border);
++}
++
++.modal-title {
++  font-size: 1.1rem;
++  font-weight: 700;
++  color: var(--text-main);
++}
++
++.modal-body { padding: 1.5rem; }
++.modal-footer {
++  display: flex;
++  padding: 1rem 1.5rem;
++  border-top: 1px solid var(--glass-border);
++}
++
+ /* Thermal receipt specific styles */
+ .thermal-receipt-print {
+   display: none;
+-  width: 58mm; /* Standard narrow thermal printer */
++  width: 58mm;
+   margin: 0 auto;
+   padding: 5mm;
+   background: white;
+@@ -934,23 +988,12 @@ label {
+ }
+ 
+ @media print {
+-  /* Default hide thermal receipt on standard A4 print */
+-  .thermal-receipt-print {
+-    display: none !important;
+-  }
+-  
+-  /* If we are specifically printing a receipt */
+-  body.printing-receipt .thermal-receipt-print {
+-    display: block !important;
+-    width: 58mm;
+-  }
+-  
+-  body.printing-receipt .app-layout {
+-    display: none !important;
+-  }
++  .thermal-receipt-print { display: none !important; }
++  body.printing-receipt .thermal-receipt-print { display: block !important; width: 58mm; }
++  body.printing-receipt .app-layout { display: none !important; }
+ }
+ 
+-/* Premium Urdu Typography (Nastaliq) */
++/* Premium Urdu Typography */
+ .urdu-text {
+   font-family: 'Noto Nastaliq Urdu', serif;
+   direction: rtl;
+@@ -958,7 +1001,6 @@ label {
+   line-height: 2.8;
+ }
+ 
+-/* Adjust font size for print vs UI */
+ .preview-content .urdu-text,
+ #print-area .urdu-text {
+   font-size: 1.1rem;
+@@ -973,20 +1015,270 @@ label {
+ }
+ 
+ /* =====================================================
+-   RESPONSIVE UI — MOBILE & TABLET SUPPORT
++   DASHBOARD — E-Educate KPI Cards & Layout
++   ===================================================== */
++
++/* Welcome banner */
++.dashboard-welcome-banner {
++  background: linear-gradient(135deg, #0D9488 0%, #0F766E 100%);
++  color: white;
++  padding: 0.6rem 1.25rem;
++  border-radius: var(--radius);
++  margin-bottom: 1.5rem;
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  font-size: 0.85rem;
++  font-weight: 500;
++}
++
++/* Dashboard Greeting Row */
++.dashboard-greeting-row {
++  display: flex;
++  justify-content: space-between;
++  align-items: flex-start;
++  margin-bottom: 1.5rem;
++  gap: 1rem;
++}
++
++.dashboard-greeting-title {
++  font-size: 1.65rem;
++  font-weight: 800;
++  color: var(--text-main);
++  margin-bottom: 0.25rem;
++}
++
++.dashboard-greeting-subtitle {
++  color: var(--text-muted);
++  font-size: 0.9rem;
++}
++
++/* KPI Cards */
++.kpi-grid {
++  display: grid;
++  grid-template-columns: repeat(4, 1fr);
++  gap: 1rem;
++  margin-bottom: 1.5rem;
++}
++
++.kpi-card {
++  background: white;
++  border-radius: var(--radius-lg);
++  border: 1px solid var(--glass-border);
++  box-shadow: var(--shadow-card);
++  padding: 1.25rem;
++  display: flex;
++  justify-content: space-between;
++  align-items: flex-start;
++  transition: all 0.2s ease;
++}
++
++.kpi-card:hover {
++  box-shadow: var(--shadow-md);
++  transform: translateY(-2px);
++}
++
++.kpi-card-info h3 {
++  font-size: 0.8rem;
++  font-weight: 500;
++  color: var(--text-secondary);
++  margin-bottom: 0.5rem;
++}
++
++.kpi-card-info .kpi-number {
++  font-size: 1.75rem;
++  font-weight: 800;
++  color: var(--text-main);
++  line-height: 1;
++  margin-bottom: 0.35rem;
++}
++
++.kpi-card-info .kpi-subtitle {
++  font-size: 0.75rem;
++  font-weight: 500;
++}
++
++.kpi-icon {
++  width: 44px;
++  height: 44px;
++  border-radius: var(--radius);
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  flex-shrink: 0;
++}
++
++.kpi-icon svg {
++  width: 22px;
++  height: 22px;
++}
++
++/* Dashboard charts area */
++.dashboard-charts-grid {
++  display: grid;
++  grid-template-columns: 1.5fr 1fr;
++  gap: 1rem;
++  margin-bottom: 1.5rem;
++}
++
++/* Dashboard chart card */
++.chart-card {
++  background: white;
++  border-radius: var(--radius-lg);
++  border: 1px solid var(--glass-border);
++  box-shadow: var(--shadow-card);
++  padding: 1.25rem;
++}
++
++.chart-card-header {
++  display: flex;
++  justify-content: space-between;
++  align-items: center;
++  margin-bottom: 1rem;
++}
++
++.chart-card-title {
++  font-size: 1rem;
++  font-weight: 700;
++  color: var(--text-main);
++}
++
++/* Simple bar chart */
++.simple-bar-chart {
++  display: flex;
++  align-items: flex-end;
++  gap: 0.5rem;
++  height: 160px;
++  padding: 0.5rem 0;
++}
++
++.bar-column {
++  flex: 1;
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: 0.4rem;
++  height: 100%;
++  justify-content: flex-end;
++}
++
++.bar-fill {
++  width: 70%;
++  border-radius: 6px 6px 2px 2px;
++  min-height: 4px;
++  transition: height 0.5s ease;
++}
++
++.bar-label {
++  font-size: 0.65rem;
++  color: var(--text-muted);
++  font-weight: 500;
++}
++
++/* Summary stat rows */
++.summary-stat-row {
++  display: flex;
++  justify-content: space-between;
++  align-items: center;
++  padding: 0.65rem 0;
++  border-bottom: 1px solid var(--glass-border);
++}
++
++.summary-stat-row:last-child { border-bottom: none; }
++
++.summary-stat-label {
++  font-size: 0.85rem;
++  color: var(--text-secondary);
++  font-weight: 500;
++}
++
++.summary-stat-value {
++  font-size: 1rem;
++  font-weight: 700;
++  color: var(--text-main);
++}
++
++/* Recent activity list */
++.activity-item {
++  display: flex;
++  align-items: flex-start;
++  gap: 0.75rem;
++  padding: 0.65rem 0;
++  border-bottom: 1px solid var(--glass-border);
++}
++
++.activity-item:last-child { border-bottom: none; }
++
++.activity-icon {
++  width: 32px;
++  height: 32px;
++  border-radius: 50%;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  font-size: 0.85rem;
++  flex-shrink: 0;
++}
++
++.activity-text h4 {
++  font-size: 0.85rem;
++  font-weight: 600;
++  color: var(--text-main);
++  margin-bottom: 0.15rem;
++}
++
++.activity-text p {
++  font-size: 0.75rem;
++  color: var(--text-muted);
++}
++
++/* Sub-tabs for settings */
++.sub-tabs {
++  display: flex;
++  gap: 0.25rem;
++  background: #F1F5F9;
++  padding: 0.25rem;
++  border-radius: var(--radius);
++}
++
++.sub-tab-btn {
++  padding: 0.5rem 1rem;
++  border: none;
++  background: transparent;
++  border-radius: 8px;
++  cursor: pointer;
++  font-size: 0.8rem;
++  font-weight: 600;
++  color: var(--text-secondary);
++  transition: all 0.2s;
++  font-family: 'Inter', sans-serif;
++}
++
++.sub-tab-btn.active {
++  background: white;
++  color: var(--text-main);
++  box-shadow: var(--shadow-sm);
++}
++
++.sub-tab-btn:hover:not(.active) {
++  color: var(--text-main);
++}
++
++/* =====================================================
++   RESPONSIVE — MOBILE & TABLET
+    ===================================================== */
+ 
+-/* --- Mobile Top Header (hidden on desktop) --- */
++/* Mobile Top Header */
+ .mobile-header {
+   display: none;
+   position: fixed;
+   top: 0;
+   left: 0;
+   right: 0;
+-  height: 60px;
+-  background: #F2EFE9;
++  height: 56px;
++  background: #FFFFFF;
+   border-bottom: 1px solid var(--glass-border);
+-  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
++  box-shadow: var(--shadow-sm);
+   z-index: 1500;
+   align-items: center;
+   justify-content: space-between;
+@@ -995,20 +1287,19 @@ label {
+ }
+ 
+ .mobile-page-title {
+-  font-weight: 700;
+-  font-size: 1rem;
++  font-weight: 600;
++  font-size: 0.95rem;
+   color: var(--text-main);
+   flex: 1;
+   text-align: center;
+-  letter-spacing: -0.02em;
+   white-space: nowrap;
+   overflow: hidden;
+   text-overflow: ellipsis;
+ }
+ 
+ .mobile-user-avatar {
+-  width: 36px;
+-  height: 36px;
++  width: 34px;
++  height: 34px;
+   border-radius: 50%;
+   background: var(--primary);
+   color: white;
+@@ -1016,18 +1307,17 @@ label {
+   align-items: center;
+   justify-content: center;
+   font-weight: 700;
+-  font-size: 0.9rem;
++  font-size: 0.85rem;
+   flex-shrink: 0;
+   cursor: pointer;
+-  box-shadow: 0 2px 8px rgba(15,109,99,0.3);
+ }
+ 
+-/* --- Sidebar Overlay (mobile backdrop) --- */
++/* Sidebar Overlay */
+ .sidebar-overlay {
+   display: none;
+   position: fixed;
+   inset: 0;
+-  background: rgba(0, 0, 0, 0.45);
++  background: rgba(15, 23, 42, 0.5);
+   backdrop-filter: blur(4px);
+   z-index: 1800;
+   animation: fadeOverlay 0.25s ease;
+@@ -1035,259 +1325,139 @@ label {
+ 
+ @keyframes fadeOverlay {
+   from { opacity: 0; }
+-  to   { opacity: 1; }
++  to { opacity: 1; }
+ }
+ 
+-/* --- Prescription action buttons wrapper --- */
++/* Prescription action buttons wrapper */
+ .prescription-actions {
+   display: flex;
+   flex-wrap: wrap;
+-  gap: 0.75rem;
++  gap: 0.5rem;
+ }
+ 
+ /* =====================================================
+    TABLET BREAKPOINT: 768px – 1024px
+    ===================================================== */
+ @media (max-width: 1024px) {
+-  .app-layout {
+-    padding: 1rem;
+-    gap: 1rem;
+-  }
++  .app-layout { gap: 0; }
+ 
+-  /* Auto-collapse sidebar on tablets */
+   .sidebar:not(.mobile-open) {
+-    width: 70px;
+-    padding: 2rem 0.5rem;
++    width: 68px;
++    padding: 1.25rem 0.5rem;
+     align-items: center;
+   }
+ 
+-  .sidebar:not(.mobile-open) .nav-text {
+-    display: none;
+-  }
+-
+-  .sidebar:not(.mobile-open) .brand {
+-    margin-bottom: 2rem;
+-    justify-content: center;
+-  }
+-
+-  .sidebar:not(.mobile-open) .nav-item {
+-    justify-content: center;
+-    padding: 1rem;
+-  }
+-
+-  .sidebar:not(.mobile-open) .nav-item svg {
+-    margin: 0;
+-  }
++  .sidebar:not(.mobile-open) .nav-text { display: none; }
++  .sidebar:not(.mobile-open) .nav-section-label { display: none; }
++  .sidebar:not(.mobile-open) .brand { margin-bottom: 1.5rem; justify-content: center; }
++  .sidebar:not(.mobile-open) .nav-item { justify-content: center; padding: 0.7rem; }
++  .sidebar:not(.mobile-open) .nav-item svg { margin: 0; }
++  .sidebar:not(.mobile-open) .nav-item::before { display: none; }
++  .sidebar:not(.mobile-open) .sidebar-footer { padding: 0.5rem; }
++  .sidebar:not(.mobile-open) .sidebar-footer .nav-text { display: none; }
+ 
+-  .sidebar:not(.mobile-open) .sidebar-footer {
+-    padding: 0.5rem;
+-  }
+-
+-  .sidebar:not(.mobile-open) .sidebar-footer .nav-text {
+-    display: none;
+-  }
+-
+-  .grid-2 {
+-    gap: 1.25rem;
+-  }
+-
+-  .section-header {
+-    flex-wrap: wrap;
+-    gap: 0.75rem;
+-  }
++  .grid-2 { gap: 1rem; }
++  .section-header { flex-wrap: wrap; gap: 0.75rem; }
++  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
++  .dashboard-charts-grid { grid-template-columns: 1fr; }
+ }
+ 
+ /* =====================================================
+    MOBILE BREAKPOINT: < 768px
+    ===================================================== */
+ @media (max-width: 768px) {
++  body { overflow-y: auto; overflow-x: hidden; height: auto; min-height: 100vh; }
++  #root { height: auto; min-height: 100vh; }
+ 
+-  /* Allow scrolling on mobile */
+-  body {
+-    overflow-y: auto;
+-    overflow-x: hidden;
+-    height: auto;
+-    min-height: 100vh;
+-  }
++  .mobile-header { display: flex; }
+ 
+-  #root {
+-    height: auto;
+-    min-height: 100vh;
+-  }
+-
+-  /* Show mobile header */
+-  .mobile-header {
+-    display: flex;
+-  }
+-
+-  /* App layout becomes single column */
+   .app-layout {
+     flex-direction: column;
+     padding: 0;
+     gap: 0;
+     height: auto;
+     min-height: 100vh;
+-    padding-top: 60px; /* below mobile header */
++    padding-top: 56px;
+   }
+ 
+-  /* --- Sidebar becomes drawer --- */
+   .sidebar {
+     position: fixed;
+     top: 0;
+     left: 0;
+     bottom: 0;
+-    width: 280px !important;
++    width: 260px !important;
+     height: 100vh;
+     z-index: 2000;
+-    border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
++    border-radius: 0;
+     transform: translateX(-100%);
+     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+-    padding: 1.5rem !important;
++    padding: 1.25rem 0.75rem !important;
+     overflow-y: auto;
+   }
+ 
+-  .sidebar.mobile-open {
+-    transform: translateX(0);
+-  }
+-
+-  .sidebar-overlay {
+-    display: block;
+-  }
+-
+-  /* Show nav text in mobile drawer */
+-  .sidebar .nav-text {
+-    display: inline !important;
+-  }
+-
+-  .sidebar .brand {
+-    justify-content: flex-start !important;
+-    margin-bottom: 2rem !important;
+-  }
++  .sidebar.mobile-open { transform: translateX(0); }
++  .sidebar-overlay { display: block; }
+ 
++  .sidebar .nav-text { display: inline !important; }
++  .sidebar .nav-section-label { display: block !important; }
++  .sidebar .brand { justify-content: flex-start !important; margin-bottom: 1.5rem !important; }
+   .sidebar .nav-item {
+     justify-content: flex-start !important;
+-    padding: 0.9rem 1.25rem !important;
+-    font-size: 1rem;
+-    min-height: 52px;
+-  }
+-
+-  /* Main content full width on mobile */
+-  .main-content {
+-    flex: 1;
+-    width: 100%;
+-    border-radius: 0;
+-    padding: 1rem;
+-    height: auto;
+-    overflow-y: visible;
+-  }
+-
+-  /* Section headers stack vertically */
+-  .section-header {
+-    flex-direction: column;
+-    align-items: flex-start;
+-    gap: 1rem;
+-    margin-bottom: 1.5rem;
+-  }
+-
+-  .section-title {
+-    font-size: 1.4rem;
+-  }
+-
+-  /* All 2-column grids go single column */
+-  .grid-2 {
+-    grid-template-columns: 1fr !important;
+-    gap: 1rem;
+-  }
+-
+-  /* Responsive flex cards stack */
+-  .grid-responsive > .card {
+-    flex: 1 1 100% !important;
+-  }
+-
+-  /* Cards */
+-  .card {
+-    border-radius: 16px;
+-    padding: 1.25rem;
+-    margin-bottom: 1rem;
+-  }
+-
+-  /* Unified workspace */
+-  .unified-workspace {
+-    border-radius: 16px;
+-    padding: 1.25rem;
++    padding: 0.65rem 1rem !important;
++    font-size: 0.9rem;
++    min-height: 44px;
+   }
+ 
+-  /* Touch-friendly inputs */
+-  input,
+-  select,
+-  textarea {
+-    min-height: 48px;
+-    padding: 0.85rem 1.25rem;
+-    font-size: 1rem;
+-  }
++  .main-content { flex: 1; width: 100%; border-radius: 0; padding: 0.75rem; height: auto; overflow-y: visible; }
+ 
+-  /* Touch-friendly buttons */
+-  .btn {
+-    min-height: 48px;
+-    padding: 0.85rem 1.5rem;
+-    font-size: 0.95rem;
+-  }
++  .section-header { flex-direction: column; align-items: flex-start; gap: 0.5rem; margin-bottom: 1rem; }
++  .section-title { font-size: 1rem; }
+ 
+-  .btn-icon {
+-    min-width: 44px;
+-    min-height: 44px;
+-  }
++  /* Dashboard mobile fonts */
++  .dashboard-welcome-banner { font-size: 0.72rem; padding: 0.45rem 0.85rem; margin-bottom: 1rem; }
++  .kpi-card-info h3 { font-size: 0.65rem; }
++  .kpi-card-info .kpi-number { font-size: 1.2rem; }
++  .kpi-card-info .kpi-subtitle { font-size: 0.6rem; }
++  .kpi-card { padding: 0.75rem; }
++  .kpi-icon { width: 36px; height: 36px; }
++  .kpi-icon svg { width: 18px; height: 18px; }
++  .chart-card { padding: 1rem; }
++  .chart-card-title { font-size: 0.85rem; }
++  .summary-stat-label { font-size: 0.75rem; }
++  .summary-stat-value { font-size: 0.8rem; }
++  .bar-label { font-size: 0.55rem; }
++  .simple-bar-chart { height: 120px; }
+ 
+-  /* Prescription action buttons: full width stacked */
+-  .prescription-actions {
+-    flex-direction: column;
+-    width: 100%;
+-  }
++  /* Dashboard greeting smaller on mobile */
++  .dashboard-greeting-row { flex-wrap: wrap; margin-bottom: 1rem; gap: 0.5rem; }
++  .dashboard-greeting-title { font-size: 1.1rem; }
++  .dashboard-greeting-subtitle { font-size: 0.75rem; }
++  .dashboard-greeting-row .btn { font-size: 0.72rem; padding: 0.4rem 0.75rem; min-height: 32px; }
+ 
+-  .prescription-actions .btn {
+-    width: 100%;
+-    justify-content: center;
+-  }
++  .grid-2 { grid-template-columns: 1fr !important; gap: 0.75rem; }
++  .grid-responsive > .card { flex: 1 1 100% !important; }
+ 
+-  /* Section header button groups become full-width stacked */
+-  .section-header > div {
+-    width: 100%;
+-    flex-direction: column;
+-  }
++  .card { border-radius: var(--radius); padding: 1rem; margin-bottom: 0.75rem; }
++  .unified-workspace { padding: 0; }
+ 
+-  .section-header > div .btn {
+-    width: 100%;
+-    justify-content: center;
+-  }
++  input, select, textarea { min-height: 44px; padding: 0.65rem 1rem; font-size: 0.9rem; }
++  .btn { min-height: 44px; padding: 0.65rem 1.25rem; font-size: 0.9rem; }
++  .btn-icon { min-width: 40px; min-height: 40px; }
+ 
+-  /* Medicine rows: become card-style stacked columns */
+-  .med-row {
+-    flex-direction: column;
+-    gap: 0.75rem;
+-    padding: 1rem;
+-    border-radius: 16px;
+-  }
++  .prescription-actions { flex-direction: column; width: 100%; }
++  .prescription-actions .btn { width: 100%; justify-content: center; }
+ 
+-  .med-row > div {
+-    width: 100% !important;
+-    flex: unset !important;
+-  }
++  .section-header > div { width: 100%; flex-direction: column; }
++  .section-header > div .btn { width: 100%; justify-content: center; }
+ 
+-  .med-row .btn-danger,
+-  .med-row .btn-icon {
+-    width: 100%;
+-    height: 44px;
+-    border-radius: 12px;
+-    margin-top: 0;
+-    justify-content: center;
++  .med-row { flex-direction: column; gap: 0.5rem; padding: 0.75rem; }
++  .med-row > div { width: 100% !important; flex: unset !important; }
++  .med-row .btn-danger, .med-row .btn-icon {
++    width: 100%; height: 40px; border-radius: 8px; margin-top: 0; justify-content: center;
+   }
+ 
+-  /* Medicine table header hidden on mobile (labels shown inline) */
+-  .medicine-table-header {
+-    display: none !important;
+-  }
++  .medicine-table-header { display: none !important; }
+ 
+-  /* Data tables: horizontally scrollable */
+   .data-table-wrapper,
+   .card > div[style*="overflowX"],
+   div[style*="overflow-x: auto"],
+@@ -1296,30 +1466,12 @@ label {
+     -webkit-overflow-scrolling: touch;
+   }
+ 
+-  .data-table {
+-    min-width: 600px;
+-  }
+-
+-  /* Tag buttons wrap nicely */
+-  .tag-btn {
+-    padding: 0.6rem 1rem;
+-    font-size: 0.85rem;
+-    min-height: 40px;
+-  }
+-
+-  /* Modal: full screen on mobile */
+-  .modal-overlay {
+-    padding: 0;
+-    align-items: flex-end;
+-  }
++  .data-table { min-width: 550px; }
++  .tag-btn { padding: 0.5rem 0.85rem; font-size: 0.8rem; min-height: 36px; }
+ 
+-  .modal-content.card {
+-    border-radius: 24px 24px 0 0;
+-    max-height: 90vh;
+-    overflow-y: auto;
+-  }
++  .modal-overlay { padding: 0; align-items: flex-end; }
++  .modal-content.card { border-radius: var(--radius-lg) var(--radius-lg) 0 0; max-height: 90vh; overflow-y: auto; }
+ 
+-  /* Modal card (template modals etc.) */
+   div[style*="maxWidth: '450px'"],
+   div[style*="maxWidth: '500px'"],
+   div[style*="maxWidth: '800px'"] {
+@@ -1327,81 +1479,52 @@ label {
+     width: 100%;
+   }
+ 
+-  /* Preview overlay: reduce padding */
+-  .preview-overlay {
+-    padding: 1rem;
+-  }
+-
+-  /* Print preview: scale to fit mobile screen */
+-  .preview-content {
+-    width: 100%;
+-    min-height: auto;
+-    padding: 40mm 8mm 20mm 8mm;
+-    transform-origin: top center;
+-  }
+-
+-  /* System card grid: 1 column */
+-  .system-card-grid {
+-    grid-template-columns: 1fr;
+-  }
++  .preview-overlay { padding: 0.75rem; }
++  .preview-content { width: 100%; min-height: auto; padding: 40mm 8mm 20mm 8mm; }
+ 
+-  /* Reports date filter */
+-  .section-header input[type="date"] {
+-    width: 100% !important;
+-  }
+-
+-  /* Reception desk / Appointments top actions */
+-  .section-header > div[style] {
+-    flex-wrap: wrap;
+-    gap: 0.75rem;
+-  }
++  .system-card-grid { grid-template-columns: 1fr; }
++  .section-header input[type="date"] { width: 100% !important; }
++  .section-header > div[style] { flex-wrap: wrap; gap: 0.5rem; }
+ 
+-  /* Smooth scroll */
+-  * {
+-    scroll-behavior: smooth;
+-  }
++  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
++  .dashboard-charts-grid { grid-template-columns: 1fr; }
+ 
+-  /* Workspace section investigation+advice grid: stack */
+-  .workspace-section + .workspace-section {
+-    margin-top: 0;
+-  }
++  * { scroll-behavior: smooth; }
++  .workspace-section + .workspace-section { margin-top: 0; }
+ }
+ 
+ /* =====================================================
+-   MOBILE SMALL (< 480px) — Extra refinements
++   MOBILE SMALL (< 480px)
+    ===================================================== */
+ @media (max-width: 480px) {
+-  .section-title {
+-    font-size: 1.25rem;
+-  }
+-
+-  .app-layout {
+-    padding-top: 60px;
+-  }
+-
+-  .preview-overlay {
+-    padding: 0.5rem;
+-  }
+-
+-  .preview-content {
+-    padding: 35mm 5mm 15mm 5mm;
+-  }
+-
+-  input, select, textarea {
+-    border-radius: 12px;
+-  }
+-
+-  .btn {
+-    border-radius: 14px;
+-  }
++  .section-title { font-size: 0.95rem; }
++  .app-layout { padding-top: 56px; }
++  .preview-overlay { padding: 0.5rem; }
++  .preview-content { padding: 35mm 5mm 15mm 5mm; }
++  input, select, textarea { border-radius: 10px; font-size: 0.8rem; }
++  .btn { border-radius: 10px; font-size: 0.8rem; }
++  .kpi-grid { grid-template-columns: 1fr 1fr; gap: 0.4rem; }
++  .kpi-card { padding: 0.65rem; }
++  .kpi-card-info h3 { font-size: 0.6rem; }
++  .kpi-card-info .kpi-number { font-size: 1.1rem; }
++  .kpi-card-info .kpi-subtitle { font-size: 0.55rem; }
++  .kpi-icon { width: 30px; height: 30px; }
++  .kpi-icon svg { width: 15px; height: 15px; }
++  .dashboard-welcome-banner { font-size: 0.65rem; padding: 0.4rem 0.75rem; }
++  .chart-card-title { font-size: 0.8rem; }
++  .summary-stat-label { font-size: 0.7rem; }
++  .summary-stat-value { font-size: 0.75rem; }
++  .data-table td { font-size: 0.75rem; padding: 0.6rem 0.75rem; }
++  .data-table th { font-size: 0.6rem; padding: 0.5rem 0.75rem; }
++  label { font-size: 0.65rem; }
++  .dashboard-greeting-title { font-size: 0.95rem; }
++  .dashboard-greeting-subtitle { font-size: 0.7rem; }
++  .dashboard-greeting-row .btn { font-size: 0.68rem; padding: 0.35rem 0.65rem; min-height: 30px; }
+ }
+ 
+ /* =====================================================
+-   PRINT — never affected by responsive changes
++   PRINT — Never affected by responsive
+    ===================================================== */
+ @media print {
+-  .mobile-header,
+-  .sidebar-overlay {
+-    display: none !important;
+-  }
++  .mobile-header, .sidebar-overlay { display: none !important; }
+ }
+\ No newline at end of file
+diff --git a/src/useDatabase.js b/src/useDatabase.js
+index be45ee8..d8b1f96 100644
+--- a/src/useDatabase.js
++++ b/src/useDatabase.js
+@@ -389,16 +389,16 @@ export function useDatabase() {
+ 
+   const getQueue = async (date, doctorId = null) => {
+     if (isElectron()) {
+-      let query = `SELECT q.*, p.name as patient_name, p.phone as patient_phone, d.doctor_name FROM patient_queue q JOIN patients p ON q.patient_id = p.id JOIN doctors d ON q.doctor_id = d.doctor_id WHERE q.date_only = ?`;
++      let query = `SELECT q.*, COALESCE(p.name, pay.patient_name) as patient_name, COALESCE(p.phone, pay.phone_number) as patient_phone, COALESCE(d.doctor_name, pay.doctor_name) as doctor_name FROM patient_queue q LEFT JOIN patients p ON q.patient_id = p.id LEFT JOIN doctors d ON q.doctor_id = d.doctor_id LEFT JOIN payments pay ON q.payment_id = pay.payment_id WHERE q.date_only = ?`;
+       const params = [date];
+       if (doctorId) { query += ` AND q.doctor_id = ?`; params.push(doctorId); }
+       query += ` ORDER BY q.token_number ASC`;
+       return await executeQuery(query, params);
+     }
+-    let q = db.from('patient_queue').select('*, patients(name, phone), doctors(doctor_name)').eq('date_only', date).order('token_number', { ascending: true });
++    let q = db.from('patient_queue').select('*, patients(name, phone), doctors(doctor_name), payments(patient_name, phone_number, doctor_name)').eq('date_only', date).order('token_number', { ascending: true });
+     if (doctorId) q = q.eq('doctor_id', doctorId);
+     const data = await cloudQ(() => q);
+-    return (data || []).map(item => ({ ...item, patient_name: item.patients?.name, patient_phone: item.patients?.phone, doctor_name: item.doctors?.doctor_name }));
++    return (data || []).map(item => ({ ...item, patient_name: item.patients?.name || item.payments?.patient_name, patient_phone: item.patients?.phone || item.payments?.phone_number, doctor_name: item.doctors?.doctor_name || item.payments?.doctor_name }));
+   };
+ 
+   const updateQueueStatus = async (queueId, status) => {
+@@ -461,6 +461,266 @@ export function useDatabase() {
+     return await cloudQ(() => db.from('prescription_templates').delete().eq('template_id', id));
+   };
+ 
++  // ==========================
++  // IPD / BED MANAGEMENT
++  // ==========================
++  const getWards = async () => {
++    if (isElectron()) return await executeQuery(`SELECT w.*, (SELECT COUNT(*) FROM beds b WHERE b.ward_id = w.ward_id) as bed_count, (SELECT COUNT(*) FROM beds b WHERE b.ward_id = w.ward_id AND b.status = 'Occupied') as occupied_count FROM wards w ORDER BY w.ward_name ASC`);
++    return await cloudQ(() => db.from('wards').select().order('ward_name', { ascending: true }));
++  };
++
++  const getBeds = async (wardId = null) => {
++    if (isElectron()) {
++      const query = wardId
++        ? `SELECT b.*, w.ward_name FROM beds b JOIN wards w ON b.ward_id = w.ward_id WHERE b.ward_id = ? ORDER BY b.bed_number ASC`
++        : `SELECT b.*, w.ward_name FROM beds b JOIN wards w ON b.ward_id = w.ward_id ORDER BY w.ward_name ASC, b.bed_number ASC`;
++      return await executeQuery(query, wardId ? [wardId] : []);
++    }
++    let q = db.from('beds').select('*, wards(ward_name)').order('bed_number', { ascending: true });
++    if (wardId) q = q.eq('ward_id', wardId);
++    const data = await cloudQ(() => q);
++    return (data || []).map(b => ({ ...b, ward_name: b.wards?.ward_name }));
++  };
++
++  const saveBed = async (bed) => {
++    if (isElectron()) return await executeQuery(`INSERT INTO beds(ward_id, bed_number, status) VALUES(?, ?, 'Available')`, [bed.ward_id, bed.bed_number], true);
++    return await cloudQ(() => db.from('beds').insert({ ward_id: bed.ward_id, bed_number: bed.bed_number, status: 'Available' }).select());
++  };
++
++  const getAdmissions = async (statusFilter = null) => {
++    if (isElectron()) {
++      const query = statusFilter
++        ? `SELECT a.*, w.ward_name, b.bed_number FROM ipd_admissions a LEFT JOIN wards w ON a.ward_id = w.ward_id LEFT JOIN beds b ON a.bed_id = b.bed_id WHERE a.status = ? ORDER BY a.created_at DESC`
++        : `SELECT a.*, w.ward_name, b.bed_number FROM ipd_admissions a LEFT JOIN wards w ON a.ward_id = w.ward_id LEFT JOIN beds b ON a.bed_id = b.bed_id ORDER BY a.created_at DESC`;
++      return await executeQuery(query, statusFilter ? [statusFilter] : []);
++    }
++    let q = db.from('ipd_admissions').select('*, wards(ward_name), beds(bed_number)').order('created_at', { ascending: false });
++    if (statusFilter) q = q.eq('status', statusFilter);
++    const data = await cloudQ(() => q);
++    return (data || []).map(a => ({ ...a, ward_name: a.wards?.ward_name, bed_number: a.beds?.bed_number }));
++  };
++
++  const admitPatient = async (admissionData) => {
++    if (isElectron()) {
++      const res = await executeQuery(
++        `INSERT INTO ipd_admissions(patient_id, patient_name, patient_phone, doctor_id, doctor_name, ward_id, bed_id, diagnosis, admission_date, status, notes) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
++        [admissionData.patient_id, admissionData.patient_name, admissionData.patient_phone, admissionData.doctor_id, admissionData.doctor_name, admissionData.ward_id, admissionData.bed_id, admissionData.diagnosis, admissionData.admission_date, 'Admitted', admissionData.notes], true
++      );
++      if (res?.lastInsertRowid && admissionData.bed_id) {
++        await executeQuery(`UPDATE beds SET status = 'Occupied' WHERE bed_id = ?`, [admissionData.bed_id], true);
++      }
++      return res;
++    }
++    const data = await cloudQ(() => db.from('ipd_admissions').insert({ ...admissionData, status: 'Admitted' }).select());
++    if (data?.[0] && admissionData.bed_id) {
++      await cloudQ(() => db.from('beds').update({ status: 'Occupied' }).eq('bed_id', admissionData.bed_id));
++    }
++    return data?.[0] ? { lastInsertRowid: data[0].admission_id } : null;
++  };
++
++  const dischargePatient = async (admissionId, bedId, totalBill, paidAmount, dischargeDate) => {
++    if (isElectron()) {
++      await executeQuery(
++        `UPDATE ipd_admissions SET status = 'Discharged', discharge_date = ?, total_bill = ?, paid_amount = ? WHERE admission_id = ?`,
++        [dischargeDate, totalBill, paidAmount || 0, admissionId], true
++      );
++      if (bedId) await executeQuery(`UPDATE beds SET status = 'Available' WHERE bed_id = ?`, [bedId], true);
++      return true;
++    }
++    await cloudQ(() => db.from('ipd_admissions').update({ status: 'Discharged', discharge_date: dischargeDate, total_bill: totalBill, paid_amount: paidAmount || 0 }).eq('admission_id', admissionId));
++    if (bedId) await cloudQ(() => db.from('beds').update({ status: 'Available' }).eq('bed_id', bedId));
++    return true;
++  };
++
++  const getAdmissionById = async (admissionId) => {
++    if (isElectron()) {
++      const rows = await executeQuery(
++        `SELECT a.*, w.ward_name, b.bed_number FROM ipd_admissions a
++         LEFT JOIN wards w ON a.ward_id = w.ward_id
++         LEFT JOIN beds b ON a.bed_id = b.bed_id
++         WHERE a.admission_id = ?`,
++        [admissionId]
++      );
++      return rows?.[0] || null;
++    }
++    const data = await cloudQ(() => db.from('ipd_admissions').select('*, wards(ward_name), beds(bed_number)').eq('admission_id', admissionId).limit(1));
++    if (!data?.[0]) return null;
++    return { ...data[0], ward_name: data[0].wards?.ward_name, bed_number: data[0].beds?.bed_number };
++  };
++
++  const updatePatientStatus = async (admissionId, patientStatus) => {
++    if (isElectron()) return await executeQuery(`UPDATE ipd_admissions SET patient_status = ? WHERE admission_id = ?`, [patientStatus, admissionId], true);
++    return await cloudQ(() => db.from('ipd_admissions').update({ patient_status: patientStatus }).eq('admission_id', admissionId));
++  };
++
++  const updateAdmissionNotes = async (admissionId, diagnosis, notes) => {
++    if (isElectron()) return await executeQuery(`UPDATE ipd_admissions SET diagnosis = ?, notes = ? WHERE admission_id = ?`, [diagnosis, notes, admissionId], true);
++    return await cloudQ(() => db.from('ipd_admissions').update({ diagnosis, notes }).eq('admission_id', admissionId));
++  };
++
++  // ---- IPD Billing Items ----
++  const getIPDRatePresets = async () => {
++    if (isElectron()) return await executeQuery(`SELECT * FROM ipd_rate_presets ORDER BY item_type ASC, description ASC`);
++    return await cloudQ(() => db.from('ipd_rate_presets').select().order('item_type', { ascending: true }));
++  };
++
++  const getAdmissionBillingItems = async (admissionId) => {
++    if (isElectron()) return await executeQuery(`SELECT * FROM ipd_billing_items WHERE admission_id = ? ORDER BY added_at ASC`, [admissionId]);
++    return await cloudQ(() => db.from('ipd_billing_items').select().eq('admission_id', admissionId).order('added_at', { ascending: true }));
++  };
++
++  const addBillingItem = async (item) => {
++    const total = (item.quantity || 1) * (item.unit_price || 0);
++    if (isElectron()) {
++      const res = await executeQuery(
++        `INSERT INTO ipd_billing_items (admission_id, item_type, description, quantity, unit_price, total_price) VALUES (?,?,?,?,?,?)`,
++        [item.admission_id, item.item_type, item.description, item.quantity || 1, item.unit_price || 0, total], true
++      );
++      // Update running total on admission
++      await executeQuery(`UPDATE ipd_admissions SET total_bill = (SELECT COALESCE(SUM(total_price),0) FROM ipd_billing_items WHERE admission_id = ?) WHERE admission_id = ?`, [item.admission_id, item.admission_id], true);
++      return res;
++    }
++    const data = await cloudQ(() => db.from('ipd_billing_items').insert({ ...item, total_price: total }).select());
++    return data;
++  };
++
++  const removeBillingItem = async (itemId, admissionId) => {
++    if (isElectron()) {
++      await executeQuery(`DELETE FROM ipd_billing_items WHERE item_id = ?`, [itemId], true);
++      await executeQuery(`UPDATE ipd_admissions SET total_bill = (SELECT COALESCE(SUM(total_price),0) FROM ipd_billing_items WHERE admission_id = ?) WHERE admission_id = ?`, [admissionId, admissionId], true);
++      return true;
++    }
++    await cloudQ(() => db.from('ipd_billing_items').delete().eq('item_id', itemId));
++    return true;
++  };
++
++  // ---- IPD Payments ----
++  const getIPDPayments = async (admissionId) => {
++    if (isElectron()) return await executeQuery(`SELECT * FROM ipd_payments WHERE admission_id = ? ORDER BY created_at ASC`, [admissionId]);
++    return await cloudQ(() => db.from('ipd_payments').select().eq('admission_id', admissionId).order('created_at', { ascending: true }));
++  };
++
++  const recordIPDPayment = async (payment) => {
++    const today = new Date().toISOString().split('T')[0];
++    if (isElectron()) {
++      const res = await executeQuery(
++        `INSERT INTO ipd_payments (admission_id, amount, payment_method, payment_date, notes) VALUES (?,?,?,?,?)`,
++        [payment.admission_id, payment.amount, payment.payment_method || 'Cash', payment.payment_date || today, payment.notes || ''], true
++      );
++      // Sync paid_amount to admission
++      await executeQuery(`UPDATE ipd_admissions SET paid_amount = (SELECT COALESCE(SUM(amount),0) FROM ipd_payments WHERE admission_id = ?) WHERE admission_id = ?`, [payment.admission_id, payment.admission_id], true);
++      return res;
++    }
++    const data = await cloudQ(() => db.from('ipd_payments').insert({ ...payment, payment_date: payment.payment_date || today }).select());
++    return data;
++  };
++
++
++  // ==========================
++  // LAB MANAGEMENT
++  // ==========================
++  const getLabCatalog = async (searchTerm = '') => {
++    if (isElectron()) {
++      const query = searchTerm
++        ? `SELECT * FROM lab_tests_catalog WHERE test_name LIKE ? OR test_category LIKE ? ORDER BY test_category ASC, test_name ASC`
++        : `SELECT * FROM lab_tests_catalog ORDER BY test_category ASC, test_name ASC`;
++      return await executeQuery(query, searchTerm ? [`%${searchTerm}%`, `%${searchTerm}%`] : []);
++    }
++    let q = db.from('lab_tests_catalog').select().order('test_name', { ascending: true });
++    if (searchTerm) q = db.from('lab_tests_catalog').select().ilike('test_name', `%${searchTerm}%`);
++    return await cloudQ(() => q);
++  };
++
++  const saveLabCatalogItem = async (item) => {
++    if (isElectron()) return await executeQuery(`INSERT INTO lab_tests_catalog(test_name, test_category, normal_range, unit, price) VALUES(?,?,?,?,?)`, [item.test_name, item.test_category, item.normal_range, item.unit, item.price], true);
++    return await cloudQ(() => db.from('lab_tests_catalog').insert(item).select());
++  };
++
++  const getLabResults = async (searchTerm = '', statusFilter = '') => {
++    if (isElectron()) {
++      let query = `SELECT * FROM patient_lab_results WHERE 1=1`;
++      const params = [];
++      if (searchTerm) { query += ` AND patient_name LIKE ?`; params.push(`%${searchTerm}%`); }
++      if (statusFilter) { query += ` AND result_status = ?`; params.push(statusFilter); }
++      query += ` ORDER BY created_at DESC LIMIT 100`;
++      return await executeQuery(query, params);
++    }
++    let q = db.from('patient_lab_results').select().order('created_at', { ascending: false }).limit(100);
++    if (searchTerm) q = q.ilike('patient_name', `%${searchTerm}%`);
++    if (statusFilter) q = q.eq('result_status', statusFilter);
++    return await cloudQ(() => q);
++  };
++
++  const saveLabResult = async (result) => {
++    if (isElectron()) return await executeQuery(`INSERT INTO patient_lab_results(patient_id, patient_name, test_id, test_name, result_status, notes, ordered_by, result_date) VALUES(?,?,?,?,?,?,?,?)`,
++      [result.patient_id, result.patient_name, result.test_id, result.test_name, result.result_status || 'Pending', result.notes, result.ordered_by, result.result_date], true);
++    return await cloudQ(() => db.from('patient_lab_results').insert({ ...result, result_status: result.result_status || 'Pending' }).select());
++  };
++
++  const updateLabResult = async (resultId, resultValue, resultStatus) => {
++    if (isElectron()) return await executeQuery(`UPDATE patient_lab_results SET result_value = ?, result_status = ? WHERE result_id = ?`, [resultValue, resultStatus, resultId], true);
++    return await cloudQ(() => db.from('patient_lab_results').update({ result_value: resultValue, result_status: resultStatus }).eq('result_id', resultId));
++  };
++
++  // ==========================
++  // PHARMACY
++  // ==========================
++  const getPharmacyInventory = async (searchTerm = '') => {
++    if (isElectron()) {
++      const query = searchTerm
++        ? `SELECT * FROM pharmacy_inventory WHERE medicine_name LIKE ? ORDER BY medicine_name ASC`
++        : `SELECT * FROM pharmacy_inventory ORDER BY medicine_name ASC`;
++      return await executeQuery(query, searchTerm ? [`%${searchTerm}%`] : []);
++    }
++    let q = db.from('pharmacy_inventory').select().order('medicine_name', { ascending: true });
++    if (searchTerm) q = db.from('pharmacy_inventory').select().ilike('medicine_name', `%${searchTerm}%`);
++    return await cloudQ(() => q);
++  };
++
++  const saveInventoryItem = async (item) => {
++    if (isElectron()) return await executeQuery(`INSERT INTO pharmacy_inventory(medicine_name, batch_number, quantity, unit, purchase_price, selling_price, expiry_date, supplier, low_stock_threshold) VALUES(?,?,?,?,?,?,?,?,?)`,
++      [item.medicine_name, item.batch_number, item.quantity, item.unit || 'Tablet', item.purchase_price, item.selling_price, item.expiry_date, item.supplier, item.low_stock_threshold || 10], true);
++    return await cloudQ(() => db.from('pharmacy_inventory').insert(item).select());
++  };
++
++  const updateInventoryItem = async (itemId, updates) => {
++    if (isElectron()) return await executeQuery(`UPDATE pharmacy_inventory SET medicine_name=?, quantity=?, selling_price=?, expiry_date=?, low_stock_threshold=? WHERE item_id=?`,
++      [updates.medicine_name, updates.quantity, updates.selling_price, updates.expiry_date, updates.low_stock_threshold, itemId], true);
++    return await cloudQ(() => db.from('pharmacy_inventory').update(updates).eq('item_id', itemId));
++  };
++
++  const deleteInventoryItem = async (itemId) => {
++    if (isElectron()) return await executeQuery(`DELETE FROM pharmacy_inventory WHERE item_id = ?`, [itemId], true);
++    return await cloudQ(() => db.from('pharmacy_inventory').delete().eq('item_id', itemId));
++  };
++
++  const recordPharmacySale = async (sale) => {
++    if (isElectron()) {
++      const res = await executeQuery(`INSERT INTO pharmacy_sales(patient_name, patient_id, item_id, medicine_name, quantity_sold, unit_price, total_price, payment_method, sale_date, sale_time, sold_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
++        [sale.patient_name, sale.patient_id, sale.item_id, sale.medicine_name, sale.quantity_sold, sale.unit_price, sale.total_price, sale.payment_method, sale.sale_date, sale.sale_time, sale.sold_by], true);
++      if (sale.item_id && sale.quantity_sold > 0) {
++        await executeQuery(`UPDATE pharmacy_inventory SET quantity = quantity - ? WHERE item_id = ?`, [sale.quantity_sold, sale.item_id], true);
++      }
++      return res;
++    }
++    const data = await cloudQ(() => db.from('pharmacy_sales').insert(sale).select());
++    if (sale.item_id) {
++      const inv = await cloudQ(() => db.from('pharmacy_inventory').select('quantity').eq('item_id', sale.item_id).limit(1));
++      if (inv?.[0]) await cloudQ(() => db.from('pharmacy_inventory').update({ quantity: inv[0].quantity - sale.quantity_sold }).eq('item_id', sale.item_id));
++    }
++    return data;
++  };
++
++  const getPharmacySales = async (date = null) => {
++    if (isElectron()) {
++      const query = date ? `SELECT * FROM pharmacy_sales WHERE sale_date = ? ORDER BY created_at DESC` : `SELECT * FROM pharmacy_sales ORDER BY created_at DESC LIMIT 100`;
++      return await executeQuery(query, date ? [date] : []);
++    }
++    let q = db.from('pharmacy_sales').select().order('created_at', { ascending: false }).limit(100);
++    if (date) q = q.eq('sale_date', date);
++    return await cloudQ(() => q);
++  };
++
+   return {
+     getPatients, savePatient,
+     savePrescription, getPrescriptions, getPrescriptionDetails,
+@@ -475,6 +735,16 @@ export function useDatabase() {
+     getDailyToken, collectPayment, getTodayPayments, getQueue, updateQueueStatus,
+     getRevenueStats, getDoctorSummaryTotals,
+     getTemplates, saveTemplate, deleteTemplate,
++    // IPD / Bed
++    getWards, getBeds, saveBed, getAdmissions, admitPatient, dischargePatient,
++    getAdmissionById, updatePatientStatus, updateAdmissionNotes,
++    // IPD Billing
++    getIPDRatePresets, getAdmissionBillingItems, addBillingItem, removeBillingItem,
++    getIPDPayments, recordIPDPayment,
++    // Lab
++    getLabCatalog, saveLabCatalogItem, getLabResults, saveLabResult, updateLabResult,
++    // Pharmacy
++    getPharmacyInventory, saveInventoryItem, updateInventoryItem, deleteInventoryItem, recordPharmacySale, getPharmacySales,
+     loading
+   };
+ }

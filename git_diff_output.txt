@@ -1,0 +1,2275 @@
+diff --git a/src/App.jsx b/src/App.jsx
+index 67e8e04..9e8e88f 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -183,8 +183,8 @@ function DoctorManagement({ getDoctors, saveDoctor, updateDoctor, deleteDoctor }
+       <div className="section-header">
+         <h1 className="section-title">Doctor Management</h1>
+       </div>
+-      <div className="grid-2" style={{ gap: '2rem' }}>
+-        <div className="card">
++      <div className="card grid-2" style={{ gap: '2rem', alignItems: 'flex-start' }}>
++        <div>
+           <h2 className="section-title" style={{ fontSize: '1.2rem', marginBottom: '1.5rem' }}>{editingId ? 'Edit Doctor' : 'Add New Doctor'}</h2>
+           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+             <div>
+@@ -219,7 +219,7 @@ function DoctorManagement({ getDoctors, saveDoctor, updateDoctor, deleteDoctor }
+             </div>
+           </form>
+         </div>
+-        <div className="card" style={{ flex: 1.5 }}>
++        <div style={{ flex: 1.5 }}>
+           <h2 className="section-title" style={{ fontSize: '1.2rem', marginBottom: '1.5rem' }}>Clinic Roster</h2>
+           <div style={{ overflowX: 'auto' }}>
+             <table className="data-table">
+@@ -300,8 +300,8 @@ function UserManagement({ getUsers, saveUser, updateUser, deleteUser }) {
+       <div className="section-header">
+         <h1 className="section-title">User Management</h1>
+       </div>
+-      <div className="grid-2" style={{ gap: '2rem' }}>
+-        <div className="card">
++      <div className="card grid-2" style={{ gap: '2rem', alignItems: 'flex-start' }}>
++        <div>
+           <h2 className="section-title" style={{ fontSize: '1.2rem', marginBottom: '1.5rem' }}>{editingId ? 'Edit User' : 'Create New User'}</h2>
+           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+             <div>
+@@ -343,7 +343,7 @@ function UserManagement({ getUsers, saveUser, updateUser, deleteUser }) {
+             </div>
+           </form>
+         </div>
+-        <div className="card">
++        <div>
+           <h2 className="section-title" style={{ fontSize: '1.2rem', marginBottom: '1.5rem' }}>System Users</h2>
+           <table className="data-table">
+             <thead>
+@@ -1513,256 +1513,1776 @@ function ThermalReceipt({ data }) {
+   );
+ }
+ 
+-function LoginScreen({ onLogin, authenticateUser }) {
+-  const [username, setUsername] = useState('');
+-  const [password, setPassword] = useState('');
+-  const [error, setError] = useState('');
+-  const [isLoggingIn, setIsLoggingIn] = useState(false);
++// ============================================================
++// IPD — FULL MODULE
++// ============================================================
++function IPDModule({
++  getWards, getBeds, saveBed, getAdmissions, admitPatient, dischargePatient,
++  getDoctors, getPatients, getAdmissionById,
++  getIPDRatePresets, getAdmissionBillingItems, addBillingItem, removeBillingItem,
++  getIPDPayments, recordIPDPayment, updatePatientStatus, updateAdmissionNotes
++}) {
++  // ── Main navigation ────────────────────────────────────────
++  const [view, setView] = useState('grid');
++  // grid | admissions | admit-form | patient
++
++  // ── Data ───────────────────────────────────────────────────
++  const [wards, setWards] = useState([]);
++  const [allBeds, setAllBeds] = useState([]);          // all beds across all wards
++  const [selectedWard, setSelectedWard] = useState(null);
++  const [admissions, setAdmissions] = useState([]);
++  const [doctors, setDoctors] = useState([]);
++  const [ratePresets, setRatePresets] = useState([]);
++
++  // ── Admit-form state ───────────────────────────────────────
++  const [admitForm, setAdmitForm] = useState({
++    patient_id: null, patient_name: '', patient_phone: '', age: '', gender: 'Male',
++    doctor_id: '', ward_id: '', bed_id: '',
++    diagnosis: '', admission_date: new Date().toISOString().split('T')[0],
++    patient_status: 'Stable', notes: ''
++  });
++  const [patientResults, setPatientResults] = useState([]);
+ 
+-  const handleLogin = async (e) => {
+-    e.preventDefault();
+-    setIsLoggingIn(true);
+-    setError('');
+-    try {
+-      const user = await authenticateUser(username, password);
+-      if (user) {
+-        onLogin(user);
+-      } else {
+-        setError('Invalid username or password, or account disabled.');
+-      }
+-    } catch (err) {
+-      setError('An error occurred during login.');
+-    } finally {
+-      setIsLoggingIn(false);
++  // ── Selected patient detail ────────────────────────────────
++  const [activeAdmission, setActiveAdmission] = useState(null);
++  const [patientTab, setPatientTab] = useState('billing'); // billing | info | discharge
++  const [billingItems, setBillingItems] = useState([]);
++  const [ipdPayments, setIpdPayments] = useState([]);
++
++  // Billing add-item form
++  const [billForm, setBillForm] = useState({ item_type: 'Room', description: '', quantity: 1, unit_price: 0 });
++
++  // Discharge state
++  const [dischargeNote, setDischargeNote] = useState('');
++  const [dischargeLoading, setDischargeLoading] = useState(false);
++
++  // Payment form
++  const [payForm, setPayForm] = useState({ amount: '', payment_method: 'Cash', notes: '' });
++
++  // ── Load ───────────────────────────────────────────────────
++  useEffect(() => { loadAll(); }, []);
++
++  const loadAll = async () => {
++    const [w, d, a, presets] = await Promise.all([
++      getWards(), getDoctors(), getAdmissions(), getIPDRatePresets ? getIPDRatePresets() : Promise.resolve([])
++    ]);
++    setWards(w || []);
++    setDoctors(d || []);
++    setAdmissions(a || []);
++    setRatePresets(presets || []);
++    if (w && w.length > 0) {
++      setSelectedWard(w[0].ward_id);
++      const beds = await getBeds(null);
++      setAllBeds(beds || []);
+     }
+   };
+ 
+-  return (
+-    <div style={{ display: 'flex', width: '100%', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-gradient)', padding: '1rem' }}>
+-      <div className="card" style={{ width: '100%', maxWidth: '420px', padding: '2.5rem 2rem', textAlign: 'center' }}>
+-        <div style={{ background: 'var(--primary)', color: 'white', width: '64px', height: '64px', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.5rem', margin: '0 auto 1.5rem auto' }}>Dr</div>
+-        <h1 style={{ fontSize: '1.5rem', marginBottom: '0.5rem', color: 'var(--text-main)' }}>Clinic Login</h1>
+-        <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.9rem' }}>Enter your credentials to access the system</p>
+-        
+-        {error && <div style={{ color: 'var(--danger)', background: 'rgba(239, 68, 68, 0.1)', padding: '0.75rem', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.85rem' }}>{error}</div>}
+-        
+-        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+-          <div>
+-            <input 
+-              type="text" 
+-              placeholder="Username" 
+-              value={username} 
+-              onChange={e => setUsername(e.target.value)} 
+-              required
+-              style={{ padding: '1rem', width: '100%', borderRadius: '12px' }}
+-            />
+-          </div>
+-          <div>
+-            <input 
+-              type="password" 
+-              placeholder="Password" 
+-              value={password} 
+-              onChange={e => setPassword(e.target.value)} 
+-              required
+-              style={{ padding: '1rem', width: '100%', borderRadius: '12px' }}
+-            />
+-          </div>
+-          <button type="submit" className="btn btn-primary" style={{ marginTop: '1rem', padding: '1rem', borderRadius: '12px' }} disabled={isLoggingIn}>
+-            {isLoggingIn ? 'Authenticating...' : 'Login'}
+-          </button>
+-        </form>
+-      </div>
+-    </div>
+-  );
+-}
+-
+-function App() {
+-  const {
+-    getPatients, savePatient, savePrescription, getPrescriptions, getPrescriptionDetails,
+-    getDosagePresets, saveDosagePreset, deleteDosagePreset,
+-    getMedicinePresets, saveMedicinePreset, deleteMedicinePreset,
+-    getTestPresets, saveTestPreset, deleteTestPreset,
+-    getAdvicePresets, saveAdvicePreset, deleteAdvicePreset,
+-    updateDosagePreset, updateMedicinePreset, updateTestPreset, updateAdvicePreset,
+-    getSettings, saveSetting,
+-    getDoctors, saveDoctor, updateDoctor, deleteDoctor,
+-    getAppointments, saveAppointment, updateAppointmentStatus, deleteAppointment, updateReminderStatus,
+-    getUsers, saveUser, updateUser, deleteUser, authenticateUser,
+-    getDailyToken, collectPayment, getTodayPayments, getQueue, updateQueueStatus, getRevenueStats, getDoctorSummaryTotals,
+-    getTemplates, saveTemplate, deleteTemplate,
+-    loading
+-  } = useDatabase();
++  const loadPatientDetail = async (adm) => {
++    setActiveAdmission(adm);
++    setPatientTab('billing');
++    const [items, pays] = await Promise.all([
++      getAdmissionBillingItems ? getAdmissionBillingItems(adm.admission_id) : Promise.resolve([]),
++      getIPDPayments ? getIPDPayments(adm.admission_id) : Promise.resolve([])
++    ]);
++    setBillingItems(items || []);
++    setIpdPayments(pays || []);
++  };
+ 
+-  const [currentUser, setCurrentUser] = useState(null);
++  const refreshActiveAdmission = async () => {
++    if (!activeAdmission) return;
++    const [fresh, items, pays] = await Promise.all([
++      getAdmissionById ? getAdmissionById(activeAdmission.admission_id) : Promise.resolve(activeAdmission),
++      getAdmissionBillingItems ? getAdmissionBillingItems(activeAdmission.admission_id) : Promise.resolve([]),
++      getIPDPayments ? getIPDPayments(activeAdmission.admission_id) : Promise.resolve([])
++    ]);
++    if (fresh) setActiveAdmission(fresh);
++    setBillingItems(items || []);
++    setIpdPayments(pays || []);
++    // also update admissions list
++    setAdmissions(prev => prev.map(a => a.admission_id === fresh?.admission_id ? fresh : a));
++  };
+ 
+-  const [settings, setSettings] = useState({ top_offset: '0', left_offset: '0' });
+-  const [systemInfo, setSystemInfo] = useState({ version: '1.0', migrations: [] });
+-  const [settingsSubTab, setSettingsSubTab] = useState('presets'); // presets, system
++  // ── Admit patient ──────────────────────────────────────────
++  const handleAdmit = async () => {
++    if (!admitForm.patient_name || !admitForm.ward_id || !admitForm.bed_id) {
++      alert('Please fill Patient Name, Ward, and Bed.'); return;
++    }
++    const doc = doctors.find(d => d.doctor_id == admitForm.doctor_id);
++    await admitPatient({ ...admitForm, doctor_name: doc?.doctor_name || '', status: 'Admitted' });
++    setAdmitForm({ patient_id: null, patient_name: '', patient_phone: '', age: '', gender: 'Male', doctor_id: '', ward_id: '', bed_id: '', diagnosis: '', admission_date: new Date().toISOString().split('T')[0], patient_status: 'Stable', notes: '' });
++    setPatientResults([]);
++    await loadAll();
++    setView('admissions');
++  };
+ 
+-  const [activeTab, setActiveTab] = useState('prescription'); // prescription, records, settings
+-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+-  const [romanUrduMode, setRomanUrduMode] = useState(true);
++  const handlePatientSearch = async (term) => {
++    setAdmitForm(f => ({ ...f, patient_name: term }));
++    if (term.length > 2) setPatientResults(await getPatients(term) || []);
++    else setPatientResults([]);
++  };
+ 
+-  const pageTitles = {
+-    prescription: 'New Prescription',
+-    records: 'Patient Records',
+-    reception: 'Reception Desk',
+-    queue: 'Doctor Queue',
+-    appointments: 'Appointments',
+-    doctors: 'Doctors',
+-    users: 'User Management',
+-    reports: 'Reports',
+-    settings: 'Master Data',
++  // ── Billing ────────────────────────────────────────────────
++  const handleAddBillingItem = async () => {
++    if (!billForm.description || !billForm.unit_price) { alert('Fill description and price.'); return; }
++    await addBillingItem({
++      admission_id: activeAdmission.admission_id,
++      item_type: billForm.item_type,
++      description: billForm.description,
++      quantity: parseFloat(billForm.quantity) || 1,
++      unit_price: parseFloat(billForm.unit_price) || 0
++    });
++    setBillForm({ item_type: 'Room', description: '', quantity: 1, unit_price: 0 });
++    await refreshActiveAdmission();
+   };
+-  const [patient, setPatient] = useState({
+-    id: null, name: '', age: '', gender: 'Male', phone: '',
+-    date: new Date().toISOString().split('T')[0], address: '', symptoms: ''
+-  })
+-  const [medicines, setMedicines] = useState([{ id: Date.now(), english: '', urdu_dosage: '', frequency: '', duration: '' }])
+-  const [tests, setTests] = useState([])
+-  const [adviceText, setAdviceText] = useState('')
+-  const [structuredAdvice, setStructuredAdvice] = useState({
+-    diet: '',
+-    sitting: '',
+-    commode: '',
+-    work: '',
+-    emergency: ''
+-  })
+-  const [showPreview, setShowPreview] = useState(false)
+ 
+-  // Master Data State
+-  const [masterDosages, setMasterDosages] = useState([])
+-  const [masterMedicines, setMasterMedicines] = useState([])
+-  const [masterTests, setMasterTests] = useState([])
+-  const [masterAdvice, setMasterAdvice] = useState([])
++  const handleApplyPreset = (preset) => {
++    setBillForm({ item_type: preset.item_type, description: preset.description, quantity: 1, unit_price: preset.unit_price });
++  };
+ 
+-  // Queue State
+-  const [currentQueueItem, setCurrentQueueItem] = useState(null);
+-  const [lastPaymentPrint, setLastPaymentPrint] = useState(null);
++  const handleRemoveItem = async (itemId) => {
++    await removeBillingItem(itemId, activeAdmission.admission_id);
++    await refreshActiveAdmission();
++  };
+ 
+-  // Records State
+-  const [records, setRecords] = useState([])
+-  const [recordSearch, setRecordSearch] = useState('')
++  const handleRecordPayment = async () => {
++    if (!payForm.amount || parseFloat(payForm.amount) <= 0) { alert('Enter valid payment amount.'); return; }
++    await recordIPDPayment({ admission_id: activeAdmission.admission_id, amount: parseFloat(payForm.amount), payment_method: payForm.payment_method, notes: payForm.notes });
++    setPayForm({ amount: '', payment_method: 'Cash', notes: '' });
++    await refreshActiveAdmission();
++  };
+ 
+-  // Search/Autocomplete State
+-  const [patientResults, setPatientResults] = useState([])
+-  const [medResults, setMedResults] = useState({ index: null, results: [] })
+-  const [testResults, setTestResults] = useState({ index: null, results: [] })
+-  const [dosageResults, setDosageResults] = useState({ index: null, results: [] })
+-  
+-  // Template State
+-  const [templates, setTemplates] = useState([]);
+-  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+-  const [showLoadTemplateModal, setShowLoadTemplateModal] = useState(false);
+-  const [searchTemplate, setSearchTemplate] = useState('');
++  const handleStatusChange = async (status) => {
++    await updatePatientStatus(activeAdmission.admission_id, status);
++    setActiveAdmission(a => ({ ...a, patient_status: status }));
++    setAdmissions(prev => prev.map(a => a.admission_id === activeAdmission.admission_id ? { ...a, patient_status: status } : a));
++  };
+ 
+-  useEffect(() => {
+-    loadMasterData();
+-    loadSettings();
+-    loadTemplates();
+-    fetchSystemInfo();
+-  }, []);
++  // ── Discharge ──────────────────────────────────────────────
++  const handleDischarge = async () => {
++    setDischargeLoading(true);
++    try {
++      const today = new Date().toISOString().split('T')[0];
++      await dischargePatient(activeAdmission.admission_id, activeAdmission.bed_id, activeAdmission.total_bill || 0, activeAdmission.paid_amount || 0, today);
++      await loadAll();
++      setActiveAdmission(null);
++      setView('admissions');
++    } finally {
++      setDischargeLoading(false);
++    }
++  };
+ 
+-  // ==========================================
+-  // REMINDER AUTO-SCHEDULER
+-  // ==========================================
+-  useEffect(() => {
+-    // Helper function that does the actual checking
+-    const checkAndSendReminders = async () => {
+-      try {
+-        const s = await getSettings();
+-        if (s?.reminder_enabled !== 'true' || !s?.reminder_callmebot_apikey) return;
++  const handlePrintDischarge = () => {
++    document.body.classList.add('printing-ipd-discharge');
++    window.print();
++    document.body.classList.remove('printing-ipd-discharge');
++  };
+ 
+-        const timing = s.reminder_timing || 'morning'; // 'morning' or '2hours'
+-        const today = new Date().toISOString().split('T')[0];
+-        const now = new Date();
+-        const currentHour = now.getHours();
++  // ── Derived values ─────────────────────────────────────────
++  const totalBill = billingItems.reduce((s, i) => s + (i.total_price || 0), 0);
++  const totalPaid = ipdPayments.reduce((s, p) => s + (p.amount || 0), 0);
++  const remaining = totalBill - totalPaid;
+ 
+-        // If timing is morning, only send between 9 AM and 10 AM
+-        if (timing === 'morning' && (currentHour < 9 || currentHour >= 11)) return;
++  const activeAdmissionsCount = admissions.filter(a => a.status === 'Admitted').length;
++  const criticalCount = admissions.filter(a => a.status === 'Admitted' && a.patient_status === 'Critical').length;
+ 
+-        const appointments = await getAppointments({ exact: today });
+-        if (!appointments || appointments.length === 0) return;
++  // Beds grouped by ward for grid view
++  const wardBeds = wards.map(w => ({
++    ...w,
++    beds: allBeds.filter(b => b.ward_id === w.ward_id)
++  }));
+ 
+-        for (const appt of appointments) {
+-          // Skip if already sent, or no phone number, or cancelled/completed
+-          if (appt.reminder_sent || !appt.phone_number || appt.status !== 'Pending') continue;
++  const admissionByBedId = {};
++  admissions.filter(a => a.status === 'Admitted').forEach(a => { admissionByBedId[a.bed_id] = a; });
+ 
+-          // If timing is 2hours, check if appointment is within the next 2-3 hours
+-          if (timing === '2hours' && appt.appointment_time) {
+-            // Parse appointment time (e.g. "14:30" or "02:30 PM")
+-            // A simple check: if the hour difference is ~2
+-            const [timeStr, modifier] = appt.appointment_time.split(' ');
+-            let [apptHour, apptMin] = timeStr.split(':').map(Number);
+-            if (modifier === 'PM' && apptHour < 12) apptHour += 12;
+-            if (modifier === 'AM' && apptHour === 12) apptHour = 0;
+-            
+-            const hoursDiff = apptHour - currentHour;
+-            // Only send if it's 2 or 3 hours away
+-            if (hoursDiff < 1 || hoursDiff > 3) continue;
+-          }
++  const statusConfig = {
++    Stable: { color: 'var(--success)', bg: 'rgba(16,185,129,0.1)', emoji: '🟢' },
++    Observation: { color: 'var(--accent)', bg: 'rgba(245,158,11,0.1)', emoji: '🟡' },
++    Critical: { color: 'var(--danger)', bg: 'rgba(239,68,68,0.1)', emoji: '🔴' }
++  };
+ 
+-          // Send WhatsApp via CallMeBot
+-          try {
+-            const timeStr = appt.appointment_time || 'Scheduled';
+-            const docName = appt.doctor_name || 'Doctor';
+-            const msg = `Hello ${appt.patient_name},\n\nYaad dahani: Aaj apka appointment hai ${timeStr} baje Dr. ${docName} ke saath Neuro Clinic mein.\n\nShukriya.`;
+-            await sendWhatsAppReminder(appt.phone_number, msg, s.reminder_callmebot_apikey);
+-            await updateReminderStatus(appt.appointment_id, true);
+-            console.log(`Auto-reminder sent to ${appt.patient_name}`);
+-          } catch (err) {
+-            console.error('Auto-reminder failed for', appt.patient_name, err);
+-          }
+-        }
+-      } catch (err) {
+-        console.error('Error in reminder auto-scheduler:', err);
+-      }
+-    };
++  const stayDays = activeAdmission
++    ? Math.max(1, Math.ceil((new Date() - new Date(activeAdmission.admission_date)) / 86400000))
++    : 0;
+ 
+-    // Run once after 5 seconds of app load
+-    setTimeout(checkAndSendReminders, 5000);
++  const groupedPresets = ratePresets.reduce((acc, p) => {
++    if (!acc[p.item_type]) acc[p.item_type] = [];
++    acc[p.item_type].push(p);
++    return acc;
++  }, {});
+ 
+-    // Then run every 60 minutes
+-    const interval = setInterval(checkAndSendReminders, 60 * 60 * 1000);
+-    return () => clearInterval(interval);
+-  }, []); // Empty dep array = runs on mount only
+-  // ==========================================
++  // ── Render ─────────────────────────────────────────────────
++  return (
++    <div className="tab-content unified-workspace">
+ 
+-  const fetchSystemInfo = async () => {
+-    if (window.electronAPI && window.electronAPI.getSystemInfo) {
+-      const res = await window.electronAPI.getSystemInfo();
+-      if (res.success) setSystemInfo({ version: res.version, migrations: res.migrations });
+-    }
+-  }
++      {/* ── Header ─────────────────────────────── */}
++      <div className="section-header" style={{ marginBottom: '1rem' }}>
++        <h1 className="section-title" style={{ margin: 0 }}>IPD — Inpatient Department</h1>
++        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
++          {activeAdmission && (
++            <button className="btn btn-outline" style={{ fontSize: '0.8rem', color: 'var(--danger)' }}
++              onClick={() => { setActiveAdmission(null); }}>← Back</button>
++          )}
++          <button className={`btn ${view === 'grid' ? 'btn-primary' : 'btn-outline'}`}
++            style={{ fontSize: '0.8rem' }}
++            onClick={() => { setActiveAdmission(null); setView('grid'); loadAll(); }}>🏥 Ward Grid</button>
++          <button className={`btn ${view === 'admissions' ? 'btn-primary' : 'btn-outline'}`}
++            style={{ fontSize: '0.8rem' }}
++            onClick={() => { setActiveAdmission(null); setView('admissions'); loadAll(); }}>
++            📋 Admissions <span style={{ background: 'var(--primary)', color: 'white', borderRadius: '100px', padding: '0 6px', fontSize: '0.7rem', marginLeft: '4px' }}>{activeAdmissionsCount}</span>
++          </button>
++          <button className={`btn ${view === 'admit-form' ? 'btn-primary' : 'btn-outline'}`}
++            style={{ fontSize: '0.8rem' }}
++            onClick={() => { setActiveAdmission(null); setView('admit-form'); }}>+ Admit Patient</button>
++        </div>
++      </div>
+ 
+-  const loadSettings = async () => {
+-    try {
+-      const s = await getSettings();
+-      if (s) setSettings(s);
+-    } catch (e) {
+-      console.error('Failed to load settings:', e);
+-    }
+-  }
++      {/* ── Top KPI Strip ──────────────────────── */}
++      {!activeAdmission && (
++        <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
++          {[
++            { label: 'Active Admissions', val: activeAdmissionsCount, color: 'var(--primary)' },
++            { label: 'Critical Patients', val: criticalCount, color: 'var(--danger)' },
++            { label: 'Total Beds', val: allBeds.length, color: 'var(--text-main)' },
++            { label: 'Occupied', val: allBeds.filter(b => b.status === 'Occupied').length, color: 'var(--accent)' },
++            { label: 'Available', val: allBeds.filter(b => b.status === 'Available').length, color: 'var(--success)' },
++          ].map((s, i) => (
++            <div key={i} className="card" style={{ flex: '1 1 120px', textAlign: 'center', padding: '0.85rem', borderTop: `3px solid ${s.color}` }}>
++              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: '600', marginBottom: '0.2rem' }}>{s.label}</div>
++              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: s.color }}>{s.val}</div>
++            </div>
++          ))}
++        </div>
++      )}
+ 
+-  useEffect(() => {
+-    if (activeTab === 'records') {
+-      loadRecords();
+-    }
+-  }, [activeTab, recordSearch]);
++      {/* ════════════════════════════════════════
++          VIEW: WARD GRID (Hotel-style)
++      ════════════════════════════════════════ */}
++      {view === 'grid' && !activeAdmission && (
++        <div>
++          {wardBeds.map(ward => (
++            <div key={ward.ward_id} className="card" style={{ marginBottom: '1.25rem' }}>
++              {/* Ward header */}
++              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
++                <div>
++                  <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: '700' }}>{ward.ward_name}</h2>
++                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{ward.ward_type} •{' '}
++                    <span style={{ color: 'var(--success)', fontWeight: '600' }}>{ward.beds.filter(b => b.status === 'Available').length} free</span>
++                    {' / '}
++                    <span style={{ color: 'var(--danger)', fontWeight: '600' }}>{ward.beds.filter(b => b.status === 'Occupied').length} occupied</span>
++                  </span>
++                </div>
++                <button className="btn btn-outline" style={{ fontSize: '0.75rem', padding: '0.3rem 0.7rem' }}
++                  onClick={async () => {
++                    const num = prompt(`Enter new bed number for ${ward.ward_name} (e.g. B-01):`);
++                    if (num && num.trim()) { await saveBed({ ward_id: ward.ward_id, bed_number: num.trim() }); await loadAll(); }
++                  }}>+ Add Bed</button>
++              </div>
+ 
+-  const loadMasterData = async () => {
+-    try {
+-      const [doses, meds, tests, advice] = await Promise.all([
+-        getDosagePresets(),
+-        getMedicinePresets(),
+-        getTestPresets(),
+-        getAdvicePresets()
+-      ]);
+-      setMasterDosages(doses || []);
+-      setMasterMedicines(meds || []);
+-      setMasterTests(tests || []);
+-      setMasterAdvice(advice || []);
++              {/* Bed cards */}
++              {ward.beds.length === 0 ? (
++                <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem', fontSize: '0.85rem' }}>
++                  No beds yet. Click "+ Add Bed" to set up this ward.
++                </div>
++              ) : (
++                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem' }}>
++                  {ward.beds.map(bed => {
++                    const adm = admissionByBedId[bed.bed_id];
++                    const isOccupied = bed.status === 'Occupied' && adm;
++                    const sc = adm ? (statusConfig[adm.patient_status] || statusConfig.Stable) : null;
++                    return (
++                      <div key={bed.bed_id}
++                        onClick={() => isOccupied ? (setActiveAdmission(adm), loadPatientDetail(adm), setView('patient')) : (setAdmitForm(f => ({ ...f, bed_id: bed.bed_id, ward_id: bed.ward_id })), setView('admit-form'))}
++                        style={{
++                          padding: '0.9rem 0.75rem', borderRadius: '12px', cursor: 'pointer',
++                          background: isOccupied ? (sc?.bg || 'rgba(239,68,68,0.07)') : 'rgba(16,185,129,0.07)',
++                          border: `2px solid ${isOccupied ? (sc?.color || 'var(--danger)') : 'rgba(16,185,129,0.3)'}`,
++                          transition: 'all 0.15s', textAlign: 'center'
++                        }}
++                        onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
++                        onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
++                      >
++                        <div style={{ fontSize: '1.6rem', marginBottom: '0.25rem' }}>🛏</div>
++                        <div style={{ fontWeight: '700', fontSize: '0.85rem', color: 'var(--text-main)' }}>Bed {bed.bed_number}</div>
++                        {isOccupied ? (
++                          <>
++                            <div style={{ fontSize: '0.7rem', marginTop: '0.3rem', fontWeight: '700', color: sc?.color }}>
++                              {sc?.emoji} {adm.patient_status || 'Stable'}
++                            </div>
++                            <div style={{ fontSize: '0.7rem', marginTop: '0.15rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
++                              {adm.patient_name}
++                            </div>
++                            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
++                              Day {Math.max(1, Math.ceil((new Date() - new Date(adm.admission_date)) / 86400000))}
++                            </div>
++                          </>
++                        ) : (
++                          <div style={{ fontSize: '0.72rem', marginTop: '0.3rem', fontWeight: '600', color: 'var(--success)' }}>
++                            ✓ Available
++                          </div>
++                        )}
++                      </div>
++                    );
++                  })}
++                </div>
++              )}
++            </div>
++          ))}
++          {wardBeds.length === 0 && (
++            <div className="card" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
++              No wards configured. Wards are seeded automatically — please restart the app.
++            </div>
++          )}
++        </div>
++      )}
++
++      {/* ════════════════════════════════════════
++          VIEW: ADMISSIONS LIST
++      ════════════════════════════════════════ */}
++      {view === 'admissions' && !activeAdmission && (
++        <div className="card">
++          <table className="data-table">
++            <thead>
++              <tr>
++                <th>Patient</th><th>Status</th><th>Doctor</th><th>Ward / Bed</th>
++                <th>Admitted</th><th>Days</th><th>Bill</th><th style={{ textAlign: 'right' }}>Action</th>
++              </tr>
++            </thead>
++            <tbody>
++              {admissions.map(a => {
++                const days = Math.max(1, Math.ceil((new Date() - new Date(a.admission_date)) / 86400000));
++                const sc = statusConfig[a.patient_status] || statusConfig.Stable;
++                return (
++                  <tr key={a.admission_id}>
++                    <td>
++                      <div style={{ fontWeight: '700' }}>{a.patient_name}</div>
++                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{a.patient_phone}</div>
++                    </td>
++                    <td>
++                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.25rem 0.6rem', borderRadius: '100px', fontSize: '0.72rem', fontWeight: '700', background: a.status === 'Admitted' ? sc.bg : 'rgba(100,116,139,0.1)', color: a.status === 'Admitted' ? sc.color : 'var(--text-muted)' }}>
++                        {a.status === 'Admitted' ? sc.emoji : '⚫'} {a.status === 'Admitted' ? (a.patient_status || 'Stable') : a.status}
++                      </span>
++                    </td>
++                    <td style={{ fontSize: '0.85rem' }}>{a.doctor_name || '—'}</td>
++                    <td>
++                      <div style={{ fontSize: '0.85rem' }}>{a.ward_name}</div>
++                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Bed {a.bed_number || '—'}</div>
++                    </td>
++                    <td style={{ fontSize: '0.82rem' }}>{a.admission_date}</td>
++                    <td style={{ fontWeight: '700', color: 'var(--primary)' }}>{days}d</td>
++                    <td style={{ fontWeight: '700' }}>{(a.total_bill || 0).toLocaleString()} PKR</td>
++                    <td style={{ textAlign: 'right' }}>
++                      <button className="btn btn-primary" style={{ padding: '0.35rem 0.8rem', fontSize: '0.75rem' }}
++                        onClick={() => { loadPatientDetail(a); setView('patient'); }}>Open</button>
++                    </td>
++                  </tr>
++                );
++              })}
++              {admissions.length === 0 && (
++                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No admissions found.</td></tr>
++              )}
++            </tbody>
++          </table>
++        </div>
++      )}
++
++      {/* ════════════════════════════════════════
++          VIEW: ADMIT FORM
++      ════════════════════════════════════════ */}
++      {view === 'admit-form' && !activeAdmission && (
++        <div className="card" style={{ maxWidth: '820px' }}>
++          <h2 className="section-title" style={{ fontSize: '1.1rem', marginBottom: '1.5rem' }}>New Patient Admission</h2>
++          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
++            {/* Row 1: Patient search + phone */}
++            <div className="grid-2" style={{ gap: '1rem' }}>
++              <div style={{ position: 'relative' }}>
++                <label>Patient Name *</label>
++                <input type="text" value={admitForm.patient_name}
++                  onChange={e => handlePatientSearch(e.target.value)}
++                  placeholder="Search or type new patient..." />
++                {patientResults.length > 0 && (
++                  <div className="search-results">
++                    {patientResults.map(p => (
++                      <div key={p.id} className="search-result-item"
++                        onClick={() => { setAdmitForm(f => ({ ...f, patient_id: p.id, patient_name: p.name, patient_phone: p.phone || '', age: p.age || '', gender: p.gender || 'Male' })); setPatientResults([]); }}>
++                        <strong>{p.name}</strong> • {p.phone} {p.age ? `• Age ${p.age}` : ''}
++                      </div>
++                    ))}
++                  </div>
++                )}
++              </div>
++              <div><label>Phone</label><input type="text" value={admitForm.patient_phone} onChange={e => setAdmitForm(f => ({ ...f, patient_phone: e.target.value }))} /></div>
++            </div>
++
++            {/* Row 2: Age + Gender + Status */}
++            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
++              <div style={{ flex: 1, minWidth: '100px' }}><label>Age</label><input type="text" value={admitForm.age} onChange={e => setAdmitForm(f => ({ ...f, age: e.target.value }))} placeholder="e.g. 35" /></div>
++              <div style={{ flex: 1, minWidth: '100px' }}>
++                <label>Gender</label>
++                <select value={admitForm.gender} onChange={e => setAdmitForm(f => ({ ...f, gender: e.target.value }))}>
++                  <option>Male</option><option>Female</option>
++                </select>
++              </div>
++              <div style={{ flex: 1, minWidth: '140px' }}>
++                <label>Patient Status</label>
++                <select value={admitForm.patient_status} onChange={e => setAdmitForm(f => ({ ...f, patient_status: e.target.value }))}>
++                  <option>Stable</option><option>Observation</option><option>Critical</option>
++                </select>
++              </div>
++            </div>
++
++            {/* Row 3: Doctor + Date */}
++            <div className="grid-2" style={{ gap: '1rem' }}>
++              <div>
++                <label>Attending Doctor</label>
++                <select value={admitForm.doctor_id} onChange={e => setAdmitForm(f => ({ ...f, doctor_id: e.target.value }))}>
++                  <option value="">Select Doctor...</option>
++                  {doctors.map(d => <option key={d.doctor_id} value={d.doctor_id}>{d.doctor_name}</option>)}
++                </select>
++              </div>
++              <div><label>Admission Date</label><input type="date" value={admitForm.admission_date} onChange={e => setAdmitForm(f => ({ ...f, admission_date: e.target.value }))} /></div>
++            </div>
++
++            {/* Row 4: Ward + Bed */}
++            <div className="grid-2" style={{ gap: '1rem' }}>
++              <div>
++                <label>Ward *</label>
++                <select value={admitForm.ward_id} onChange={e => setAdmitForm(f => ({ ...f, ward_id: e.target.value, bed_id: '' }))}>
++                  <option value="">Select Ward...</option>
++                  {wards.map(w => <option key={w.ward_id} value={w.ward_id}>{w.ward_name}</option>)}
++                </select>
++              </div>
++              <div>
++                <label>Bed *</label>
++                <select value={admitForm.bed_id} onChange={e => setAdmitForm(f => ({ ...f, bed_id: e.target.value }))}>
++                  <option value="">Select Available Bed...</option>
++                  {allBeds.filter(b => b.status === 'Available' && (!admitForm.ward_id || b.ward_id == admitForm.ward_id))
++                    .map(b => <option key={b.bed_id} value={b.bed_id}>{b.ward_name} — Bed {b.bed_number}</option>)}
++                </select>
++              </div>
++            </div>
++
++            <div><label>Primary Diagnosis</label><input type="text" value={admitForm.diagnosis} onChange={e => setAdmitForm(f => ({ ...f, diagnosis: e.target.value }))} placeholder="e.g. Pneumonia, Post-Op, Fever..." /></div>
++            <div><label>Admission Notes</label><textarea rows="2" value={admitForm.notes} onChange={e => setAdmitForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any important notes..." /></div>
++
++            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
++              <button className="btn btn-primary" onClick={handleAdmit}>✓ Admit Patient</button>
++              <button className="btn btn-outline" onClick={() => setView('grid')}>Cancel</button>
++            </div>
++          </div>
++        </div>
++      )}
++
++      {/* ════════════════════════════════════════
++          VIEW: PATIENT DETAIL PANEL
++      ════════════════════════════════════════ */}
++      {activeAdmission && (
++        <div>
++          {/* Patient Banner */}
++          <div className="card" style={{ marginBottom: '1rem', background: 'linear-gradient(135deg, var(--primary-light) 0%, white 100%)', borderLeft: `4px solid ${(statusConfig[activeAdmission.patient_status] || statusConfig.Stable).color}` }}>
++            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
++              <div>
++                <div style={{ fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-main)' }}>{activeAdmission.patient_name}</div>
++                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
++                  {activeAdmission.age ? `Age ${activeAdmission.age} · ` : ''}{activeAdmission.gender || ''} · {activeAdmission.patient_phone || 'No phone'}
++                </div>
++                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
++                  📋 {activeAdmission.diagnosis || 'No diagnosis'} &nbsp; | &nbsp;
++                  🏥 {activeAdmission.ward_name} — Bed {activeAdmission.bed_number} &nbsp; | &nbsp;
++                  👨‍⚕️ {activeAdmission.doctor_name || 'No doctor'} &nbsp; | &nbsp;
++                  🗓 Day {stayDays}
++                </div>
++              </div>
++              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end' }}>
++                {/* Status selector */}
++                <div style={{ display: 'flex', gap: '0.4rem' }}>
++                  {['Stable', 'Observation', 'Critical'].map(s => {
++                    const sc = statusConfig[s];
++                    const isActive = activeAdmission.patient_status === s;
++                    return (
++                      <button key={s} onClick={() => handleStatusChange(s)}
++                        style={{ padding: '0.3rem 0.75rem', borderRadius: '100px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', border: `2px solid ${sc.color}`, background: isActive ? sc.color : 'white', color: isActive ? 'white' : sc.color, transition: 'all 0.15s' }}>
++                        {sc.emoji} {s}
++                      </button>
++                    );
++                  })}
++                </div>
++                {activeAdmission.status === 'Discharged' && (
++                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '700' }}>DISCHARGED</span>
++                )}
++              </div>
++            </div>
++          </div>
++
++          {/* Sub-tabs */}
++          <div className="sub-tabs" style={{ marginBottom: '1rem' }}>
++            {[
++              { key: 'billing', label: '💳 Billing & Payments' },
++              { key: 'info', label: '📋 Patient Info' },
++              { key: 'discharge', label: '🚪 Discharge' },
++            ].map(t => (
++              <button key={t.key} className={`sub-tab-btn ${patientTab === t.key ? 'active' : ''}`}
++                onClick={() => setPatientTab(t.key)}>{t.label}</button>
++            ))}
++          </div>
++
++          {/* ── Billing Tab ─────────────────────── */}
++          {patientTab === 'billing' && (
++            <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '1rem', alignItems: 'start' }}>
++              {/* Left: line items + add */}
++              <div>
++                <div className="card" style={{ marginBottom: '1rem' }}>
++                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
++                    <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '700' }}>Billing Items</h3>
++                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{billingItems.length} items</span>
++                  </div>
++                  {billingItems.length === 0 ? (
++                    <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No charges added yet.</div>
++                  ) : (
++                    <table className="data-table">
++                      <thead>
++                        <tr><th>Type</th><th>Description</th><th style={{ textAlign: 'right' }}>Qty</th><th style={{ textAlign: 'right' }}>Unit</th><th style={{ textAlign: 'right' }}>Total</th><th></th></tr>
++                      </thead>
++                      <tbody>
++                        {billingItems.map(item => (
++                          <tr key={item.item_id}>
++                            <td>
++                              <span style={{ padding: '0.15rem 0.5rem', borderRadius: '6px', fontSize: '0.7rem', fontWeight: '700', background: 'var(--primary-light)', color: 'var(--primary)' }}>{item.item_type}</span>
++                            </td>
++                            <td style={{ fontSize: '0.85rem' }}>{item.description}</td>
++                            <td style={{ textAlign: 'right', fontSize: '0.85rem' }}>{item.quantity}</td>
++                            <td style={{ textAlign: 'right', fontSize: '0.85rem' }}>{(item.unit_price || 0).toLocaleString()}</td>
++                            <td style={{ textAlign: 'right', fontWeight: '700' }}>{(item.total_price || 0).toLocaleString()} PKR</td>
++                            <td>
++                              {activeAdmission.status !== 'Discharged' && (
++                                <button onClick={() => handleRemoveItem(item.item_id)}
++                                  style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}>×</button>
++                              )}
++                            </td>
++                          </tr>
++                        ))}
++                        <tr style={{ background: 'rgba(15,109,99,0.05)', fontWeight: '700' }}>
++                          <td colSpan="4" style={{ textAlign: 'right', paddingRight: '0.5rem' }}>Grand Total:</td>
++                          <td style={{ textAlign: 'right', color: 'var(--primary)', fontSize: '1.05rem' }}>{totalBill.toLocaleString()} PKR</td>
++                          <td></td>
++                        </tr>
++                      </tbody>
++                    </table>
++                  )}
++                </div>
++
++                {/* Add charge */}
++                {activeAdmission.status !== 'Discharged' && (
++                  <div className="card">
++                    <h3 style={{ margin: '0 0 1rem', fontSize: '0.95rem', fontWeight: '700' }}>Add Charge</h3>
++                    {/* Quick presets */}
++                    <div style={{ marginBottom: '0.75rem' }}>
++                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: '700', marginBottom: '0.4rem' }}>QUICK ADD</div>
++                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
++                        {ratePresets.map(p => (
++                          <button key={p.preset_id} onClick={() => handleApplyPreset(p)}
++                            style={{ padding: '0.3rem 0.65rem', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '600', cursor: 'pointer', background: 'var(--primary-light)', color: 'var(--primary)', border: '1px solid rgba(15,109,99,0.2)', whiteSpace: 'nowrap' }}>
++                            {p.description} — {p.unit_price.toLocaleString()} PKR
++                          </button>
++                        ))}
++                      </div>
++                    </div>
++                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
++                      <div style={{ flex: '1 1 120px' }}>
++                        <label style={{ fontSize: '0.75rem' }}>Category</label>
++                        <select value={billForm.item_type} onChange={e => setBillForm(f => ({ ...f, item_type: e.target.value }))}>
++                          <option>Room</option><option>Doctor</option><option>Oxygen</option>
++                          <option>Procedure</option><option>Medicine</option><option>Nursing</option><option>Other</option>
++                        </select>
++                      </div>
++                      <div style={{ flex: '3 1 200px' }}>
++                        <label style={{ fontSize: '0.75rem' }}>Description</label>
++                        <input type="text" value={billForm.description} onChange={e => setBillForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Panadol 50mg" />
++                      </div>
++                      <div style={{ flex: '1 1 70px' }}>
++                        <label style={{ fontSize: '0.75rem' }}>Qty</label>
++                        <input type="number" min="0.5" step="0.5" value={billForm.quantity} onChange={e => setBillForm(f => ({ ...f, quantity: e.target.value }))} />
++                      </div>
++                      <div style={{ flex: '1 1 100px' }}>
++                        <label style={{ fontSize: '0.75rem' }}>Unit Price (PKR)</label>
++                        <input type="number" min="0" value={billForm.unit_price} onChange={e => setBillForm(f => ({ ...f, unit_price: e.target.value }))} />
++                      </div>
++                      <div>
++                        <button className="btn btn-primary" style={{ padding: '0.5rem 1rem', fontSize: '0.82rem' }} onClick={handleAddBillingItem}>+ Add</button>
++                      </div>
++                    </div>
++                    {billForm.description && (
++                      <div style={{ marginTop: '0.5rem', textAlign: 'right', fontSize: '0.85rem', color: 'var(--primary)', fontWeight: '700' }}>
++                        Line Total: {((parseFloat(billForm.quantity) || 1) * (parseFloat(billForm.unit_price) || 0)).toLocaleString()} PKR
++                      </div>
++                    )}
++                  </div>
++                )}
++              </div>
++
++              {/* Right: live payment panel */}
++              <div>
++                {/* Bill summary card */}
++                <div className="card" style={{ marginBottom: '1rem', padding: '1.25rem' }}>
++                  <h3 style={{ margin: '0 0 1rem', fontSize: '0.95rem', fontWeight: '700' }}>💳 Payment Summary</h3>
++                  {[
++                    { label: 'Total Bill', val: totalBill, color: 'var(--text-main)' },
++                    { label: 'Total Paid', val: totalPaid, color: 'var(--success)' },
++                    { label: 'Remaining', val: remaining, color: remaining > 0 ? 'var(--danger)' : 'var(--success)' },
++                  ].map(r => (
++                    <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
++                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{r.label}</span>
++                      <span style={{ fontWeight: '800', fontSize: '0.95rem', color: r.color }}>{r.val.toLocaleString()} PKR</span>
++                    </div>
++                  ))}
++                  {/* Progress bar */}
++                  <div style={{ marginTop: '0.75rem', height: '8px', borderRadius: '100px', background: 'rgba(0,0,0,0.07)', overflow: 'hidden' }}>
++                    <div style={{ height: '100%', width: `${Math.min(100, totalBill > 0 ? (totalPaid / totalBill) * 100 : 0)}%`, background: remaining <= 0 ? 'var(--success)' : 'var(--primary)', borderRadius: '100px', transition: 'width 0.4s' }} />
++                  </div>
++                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.3rem', textAlign: 'right' }}>
++                    {totalBill > 0 ? Math.round((totalPaid / totalBill) * 100) : 0}% paid
++                  </div>
++                </div>
++
++                {/* Record Payment */}
++                {activeAdmission.status !== 'Discharged' && (
++                  <div className="card" style={{ marginBottom: '1rem', padding: '1.25rem' }}>
++                    <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', fontWeight: '700' }}>Record Payment</h3>
++                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
++                      <input type="number" placeholder="Amount (PKR)" value={payForm.amount} onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))} />
++                      <select value={payForm.payment_method} onChange={e => setPayForm(f => ({ ...f, payment_method: e.target.value }))}>
++                        <option>Cash</option><option>Card</option><option>Online Transfer</option><option>Cheque</option>
++                      </select>
++                      <input type="text" placeholder="Notes (optional)" value={payForm.notes} onChange={e => setPayForm(f => ({ ...f, notes: e.target.value }))} />
++                      <button className="btn btn-primary" style={{ fontSize: '0.85rem' }} onClick={handleRecordPayment}>✓ Record Payment</button>
++                    </div>
++                  </div>
++                )}
++
++                {/* Payment history */}
++                {ipdPayments.length > 0 && (
++                  <div className="card" style={{ padding: '1rem' }}>
++                    <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-muted)' }}>PAYMENT HISTORY</h3>
++                    {ipdPayments.map(p => (
++                      <div key={p.payment_id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px solid rgba(0,0,0,0.05)', fontSize: '0.8rem' }}>
++                        <div>
++                          <div style={{ fontWeight: '600' }}>{p.payment_method}</div>
++                          <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>{p.payment_date} {p.notes ? `· ${p.notes}` : ''}</div>
++                        </div>
++                        <div style={{ fontWeight: '700', color: 'var(--success)' }}>{(p.amount || 0).toLocaleString()} PKR</div>
++                      </div>
++                    ))}
++                  </div>
++                )}
++              </div>
++            </div>
++          )}
++
++          {/* ── Patient Info Tab ─────────────────── */}
++          {patientTab === 'info' && (
++            <div className="card" style={{ maxWidth: '600px' }}>
++              <h3 style={{ margin: '0 0 1rem', fontSize: '0.95rem' }}>Edit Diagnosis & Notes</h3>
++              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
++                <div>
++                  <label>Diagnosis</label>
++                  <input type="text" defaultValue={activeAdmission.diagnosis || ''}
++                    onBlur={e => { if (updateAdmissionNotes) updateAdmissionNotes(activeAdmission.admission_id, e.target.value, activeAdmission.notes); setActiveAdmission(a => ({ ...a, diagnosis: e.target.value })); }} />
++                </div>
++                <div>
++                  <label>Clinical Notes</label>
++                  <textarea rows="4" defaultValue={activeAdmission.notes || ''}
++                    onBlur={e => { if (updateAdmissionNotes) updateAdmissionNotes(activeAdmission.admission_id, activeAdmission.diagnosis, e.target.value); setActiveAdmission(a => ({ ...a, notes: e.target.value })); }} />
++                </div>
++              </div>
++              <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'var(--primary-light)', borderRadius: '10px', fontSize: '0.82rem' }}>
++                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
++                  {[
++                    ['Patient', activeAdmission.patient_name],
++                    ['Age / Gender', `${activeAdmission.age || '—'} / ${activeAdmission.gender || '—'}`],
++                    ['Doctor', activeAdmission.doctor_name || '—'],
++                    ['Ward / Bed', `${activeAdmission.ward_name} / ${activeAdmission.bed_number}`],
++                    ['Admitted', activeAdmission.admission_date],
++                    ['Stay Duration', `${stayDays} day${stayDays !== 1 ? 's' : ''}`],
++                  ].map(([k, v]) => (
++                    <div key={k}><span style={{ color: 'var(--text-muted)' }}>{k}:</span> <strong>{v}</strong></div>
++                  ))}
++                </div>
++              </div>
++            </div>
++          )}
++
++          {/* ── Discharge Tab ────────────────────── */}
++          {patientTab === 'discharge' && (
++            <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '1rem', alignItems: 'start' }}>
++              {/* Discharge Summary (printable) */}
++              <div className="card ipd-discharge-print" id="ipd-discharge-summary">
++                <div style={{ textAlign: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '2px solid var(--primary)' }}>
++                  <div style={{ fontSize: '1.4rem', fontWeight: '800', color: 'var(--primary)' }}>🏥 Neuro Tower Clinic</div>
++                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Discharge Summary & Final Invoice</div>
++                </div>
++
++                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem', padding: '1rem', background: 'var(--primary-light)', borderRadius: '10px' }}>
++                  {[
++                    ['Patient Name', activeAdmission.patient_name],
++                    ['Age / Gender', `${activeAdmission.age || '—'} / ${activeAdmission.gender || '—'}`],
++                    ['Doctor', activeAdmission.doctor_name || '—'],
++                    ['Ward / Bed', `${activeAdmission.ward_name} / Bed ${activeAdmission.bed_number}`],
++                    ['Admission Date', activeAdmission.admission_date],
++                    ['Discharge Date', new Date().toISOString().split('T')[0]],
++                    ['Stay Duration', `${stayDays} day${stayDays !== 1 ? 's' : ''}`],
++                    ['Diagnosis', activeAdmission.diagnosis || '—'],
++                  ].map(([k, v]) => (
++                    <div key={k}><div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: '600' }}>{k}</div><div style={{ fontWeight: '700', fontSize: '0.9rem' }}>{v}</div></div>
++                  ))}
++                </div>
++
++                <h3 style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>BILLING BREAKDOWN</h3>
++                <table className="data-table" style={{ marginBottom: '1rem' }}>
++                  <thead>
++                    <tr><th>Type</th><th>Description</th><th style={{ textAlign: 'right' }}>Qty</th><th style={{ textAlign: 'right' }}>Unit</th><th style={{ textAlign: 'right' }}>Total</th></tr>
++                  </thead>
++                  <tbody>
++                    {billingItems.map(item => (
++                      <tr key={item.item_id}>
++                        <td style={{ fontSize: '0.78rem' }}>{item.item_type}</td>
++                        <td style={{ fontSize: '0.82rem' }}>{item.description}</td>
++                        <td style={{ textAlign: 'right', fontSize: '0.82rem' }}>{item.quantity}</td>
++                        <td style={{ textAlign: 'right', fontSize: '0.82rem' }}>{(item.unit_price || 0).toLocaleString()}</td>
++                        <td style={{ textAlign: 'right', fontWeight: '700', fontSize: '0.85rem' }}>{(item.total_price || 0).toLocaleString()} PKR</td>
++                      </tr>
++                    ))}
++                  </tbody>
++                </table>
++
++                <div style={{ padding: '1rem', background: remaining <= 0 ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)', borderRadius: '10px', marginBottom: '1rem' }}>
++                  {[
++                    { label: 'Total Bill', val: totalBill, style: { fontWeight: '800', fontSize: '1.1rem' } },
++                    { label: 'Total Paid', val: totalPaid, style: { color: 'var(--success)', fontWeight: '700' } },
++                    { label: 'Balance Due', val: remaining, style: { color: remaining > 0 ? 'var(--danger)' : 'var(--success)', fontWeight: '800', fontSize: '1rem' } },
++                  ].map(r => (
++                    <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
++                      <span style={{ fontSize: '0.85rem' }}>{r.label}</span>
++                      <span style={r.style}>{r.val.toLocaleString()} PKR</span>
++                    </div>
++                  ))}
++                </div>
++
++                {activeAdmission.notes && (
++                  <div style={{ marginBottom: '1rem' }}>
++                    <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>CLINICAL NOTES</div>
++                    <div style={{ fontSize: '0.82rem', padding: '0.75rem', background: '#F8FAFC', borderRadius: '8px', lineHeight: 1.6 }}>{activeAdmission.notes}</div>
++                  </div>
++                )}
++
++                <div style={{ textAlign: 'center', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid rgba(0,0,0,0.08)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
++                  Get well soon • Thank you for choosing Neuro Tower Clinic
++                </div>
++              </div>
++
++              {/* Right: action panel */}
++              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
++                <div className="card" style={{ padding: '1.25rem' }}>
++                  <h3 style={{ margin: '0 0 1rem', fontSize: '0.95rem', fontWeight: '700' }}>Discharge Actions</h3>
++                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
++                    <div style={{ padding: '0.75rem', border: '2px solid rgba(0,0,0,0.07)', borderRadius: '10px', fontSize: '0.82rem' }}>
++                      <div style={{ fontWeight: '700', marginBottom: '0.2rem' }}>Balance Due</div>
++                      <div style={{ fontSize: '1.5rem', fontWeight: '800', color: remaining > 0 ? 'var(--danger)' : 'var(--success)' }}>
++                        {remaining.toLocaleString()} PKR
++                      </div>
++                    </div>
++                    <div>
++                      <label>Discharge Notes (optional)</label>
++                      <textarea rows="3" value={dischargeNote} onChange={e => setDischargeNote(e.target.value)} placeholder="Discharge instructions, follow-up date..." />
++                    </div>
++                    <button className="btn btn-outline" onClick={handlePrintDischarge} style={{ fontSize: '0.85rem' }}>
++                      🖨 Print Discharge Summary
++                    </button>
++                    {activeAdmission.status !== 'Discharged' && (
++                      <button className="btn btn-primary" onClick={handleDischarge} disabled={dischargeLoading}
++                        style={{ fontSize: '0.85rem', background: 'var(--danger)', borderColor: 'var(--danger)' }}>
++                        {dischargeLoading ? 'Discharging...' : '✓ Confirm Discharge & Free Bed'}
++                      </button>
++                    )}
++                    {activeAdmission.status === 'Discharged' && (
++                      <div style={{ textAlign: 'center', padding: '0.75rem', background: 'rgba(16,185,129,0.1)', borderRadius: '10px', color: 'var(--success)', fontWeight: '700', fontSize: '0.85rem' }}>
++                        ✓ Patient Discharged on {activeAdmission.discharge_date}
++                      </div>
++                    )}
++                  </div>
++                </div>
++              </div>
++            </div>
++          )}
++        </div>
++      )}
++    </div>
++  );
++}
++
++
++
++
++// ============================================================
++// LAB MANAGEMENT MODULE
++// ============================================================
++
++
++
++
++// ============================================================
++// LAB MANAGEMENT MODULE
++// ============================================================
++function LabModule({ getLabCatalog, getLabResults, saveLabResult, updateLabResult, getPatients }) {
++  const [view, setView] = useState('results'); // results | order | catalog
++  const [catalog, setCatalog] = useState([]);
++  const [results, setResults] = useState([]);
++  const [statusFilter, setStatusFilter] = useState('');
++  const [searchTerm, setSearchTerm] = useState('');
++  const [editResult, setEditResult] = useState(null);
++  const [editValue, setEditValue] = useState('');
++  const [editStatus, setEditStatus] = useState('');
++  const [patientSearch, setPatientSearch] = useState('');
++  const [patientResults, setPatientResults] = useState([]);
++  const [orderForm, setOrderForm] = useState({ patient_id: null, patient_name: '', test_id: '', test_name: '', ordered_by: '', result_date: new Date().toISOString().split('T')[0] });
++
++  useEffect(() => { loadCatalog(); loadResults(); }, []);
++  useEffect(() => { loadResults(); }, [statusFilter, searchTerm]);
++
++  const loadCatalog = async () => { setCatalog(await getLabCatalog() || []); };
++  const loadResults = async () => { setResults(await getLabResults(searchTerm, statusFilter) || []); };
++
++  const handleOrderSubmit = async () => {
++    if (!orderForm.patient_name || !orderForm.test_id) { alert('Select patient and test.'); return; }
++    const test = catalog.find(t => t.test_id == orderForm.test_id);
++    await saveLabResult({ ...orderForm, test_name: test?.test_name || '', result_status: 'Pending' });
++    setView('results');
++    setOrderForm({ patient_id: null, patient_name: '', test_id: '', test_name: '', ordered_by: '', result_date: new Date().toISOString().split('T')[0] });
++    loadResults();
++  };
++
++  const handlePatientSearch = async (term) => {
++    setPatientSearch(term);
++    setOrderForm(f => ({ ...f, patient_name: term }));
++    if (term.length > 2) setPatientResults(await getPatients(term) || []);
++    else setPatientResults([]);
++  };
++
++  const handleUpdateResult = async () => {
++    await updateLabResult(editResult.result_id, editValue, editStatus);
++    setEditResult(null);
++    loadResults();
++  };
++
++  const statusColor = (s) => s === 'Completed' ? 'var(--success)' : s === 'Abnormal' ? 'var(--danger)' : 'var(--accent)';
++  const statusBg = (s) => s === 'Completed' ? 'rgba(16,185,129,0.1)' : s === 'Abnormal' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)';
++
++  // Group catalog by category
++  const grouped = catalog.reduce((acc, t) => {
++    const cat = t.test_category || 'General';
++    if (!acc[cat]) acc[cat] = [];
++    acc[cat].push(t);
++    return acc;
++  }, {});
++
++  const pending = results.filter(r => r.result_status === 'Pending').length;
++  const completed = results.filter(r => r.result_status === 'Completed').length;
++
++  return (
++    <div className="tab-content unified-workspace">
++      <div className="section-header">
++        <h1 className="section-title">Lab Management</h1>
++        <div style={{ display: 'flex', gap: '0.75rem' }}>
++          <button className={`btn ${view === 'results' ? 'btn-primary' : 'btn-outline'}`} onClick={() => { setView('results'); loadResults(); }}>🧪 Test Results</button>
++          <button className={`btn ${view === 'order' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('order')}>+ Order Test</button>
++          <button className={`btn ${view === 'catalog' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('catalog')}>📋 Catalog</button>
++        </div>
++      </div>
++
++      {/* Stats */}
++      <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
++        {[
++          { label: 'Total Orders', val: results.length, color: 'var(--primary)' },
++          { label: 'Pending', val: pending, color: 'var(--accent)' },
++          { label: 'Completed', val: completed, color: 'var(--success)' },
++        ].map((s, i) => (
++          <div key={i} className="card" style={{ flex: '1 1 140px', textAlign: 'center', padding: '1rem', borderLeft: `4px solid ${s.color}` }}>
++            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>{s.label}</div>
++            <div style={{ fontSize: '2rem', fontWeight: '800', color: s.color }}>{s.val}</div>
++          </div>
++        ))}
++      </div>
++
++      {view === 'results' && (
++        <div className="card">
++          <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
++            <input type="text" placeholder="Search patient..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ flex: 1, minWidth: '200px', padding: '0.5rem' }} />
++            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ padding: '0.5rem', minWidth: '150px' }}>
++              <option value="">All Status</option>
++              <option value="Pending">Pending</option>
++              <option value="Completed">Completed</option>
++              <option value="Abnormal">Abnormal</option>
++            </select>
++          </div>
++          <table className="data-table">
++            <thead>
++              <tr><th>Patient</th><th>Test</th><th>Ordered By</th><th>Date</th><th>Result</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
++            </thead>
++            <tbody>
++              {results.map(r => (
++                <tr key={r.result_id}>
++                  <td><strong>{r.patient_name}</strong></td>
++                  <td>{r.test_name}</td>
++                  <td style={{ fontSize: '0.85rem' }}>{r.ordered_by || '—'}</td>
++                  <td style={{ fontSize: '0.85rem' }}>{r.result_date}</td>
++                  <td style={{ fontWeight: '700' }}>{r.result_value || '—'}</td>
++                  <td>
++                    <span style={{ padding: '0.3rem 0.6rem', borderRadius: '100px', fontSize: '0.75rem', fontWeight: '700', background: statusBg(r.result_status), color: statusColor(r.result_status) }}>{r.result_status}</span>
++                  </td>
++                  <td style={{ textAlign: 'right' }}>
++                    <button className="btn btn-outline" style={{ padding: '0.35rem 0.7rem', fontSize: '0.75rem' }} onClick={() => { setEditResult(r); setEditValue(r.result_value || ''); setEditStatus(r.result_status); }}>Enter Result</button>
++                  </td>
++                </tr>
++              ))}
++              {results.length === 0 && <tr><td colSpan="7" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No lab orders found.</td></tr>}
++            </tbody>
++          </table>
++        </div>
++      )}
++
++      {view === 'order' && (
++        <div className="card" style={{ maxWidth: '680px' }}>
++          <h2 className="section-title" style={{ fontSize: '1.1rem', marginBottom: '1.5rem' }}>Order New Lab Test</h2>
++          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
++            <div style={{ position: 'relative' }}>
++              <label>Patient Name</label>
++              <input type="text" value={patientSearch} onChange={e => handlePatientSearch(e.target.value)} placeholder="Search patient..." />
++              {patientResults.length > 0 && (
++                <div className="search-results">
++                  {patientResults.map(p => (
++                    <div key={p.id} className="search-result-item" onClick={() => { setOrderForm(f => ({ ...f, patient_id: p.id, patient_name: p.name })); setPatientSearch(p.name); setPatientResults([]); }}>
++                      <strong>{p.name}</strong> • {p.phone}
++                    </div>
++                  ))}
++                </div>
++              )}
++            </div>
++            <div>
++              <label>Select Test</label>
++              <select value={orderForm.test_id} onChange={e => setOrderForm(f => ({ ...f, test_id: e.target.value }))}>
++                <option value="">Choose test...</option>
++                {Object.entries(grouped).map(([cat, tests]) => (
++                  <optgroup key={cat} label={cat}>
++                    {tests.map(t => <option key={t.test_id} value={t.test_id}>{t.test_name} — {t.price} PKR</option>)}
++                  </optgroup>
++                ))}
++              </select>
++            </div>
++            <div className="grid-2" style={{ gap: '1rem' }}>
++              <div><label>Ordered By (Doctor)</label><input type="text" value={orderForm.ordered_by} onChange={e => setOrderForm(f => ({ ...f, ordered_by: e.target.value }))} placeholder="Dr. Name" /></div>
++              <div><label>Test Date</label><input type="date" value={orderForm.result_date} onChange={e => setOrderForm(f => ({ ...f, result_date: e.target.value }))} /></div>
++            </div>
++            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
++              <button className="btn btn-primary" onClick={handleOrderSubmit}>Submit Order</button>
++              <button className="btn btn-outline" onClick={() => setView('results')}>Cancel</button>
++            </div>
++          </div>
++        </div>
++      )}
++
++      {view === 'catalog' && (
++        <div className="card">
++          <h2 className="section-title" style={{ fontSize: '1.1rem', marginBottom: '1.5rem' }}>Lab Test Catalog</h2>
++          {Object.entries(grouped).map(([cat, tests]) => (
++            <div key={cat} style={{ marginBottom: '2rem' }}>
++              <h3 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '0.75rem' }}>{cat}</h3>
++              <table className="data-table">
++                <thead>
++                  <tr><th>Test Name</th><th>Normal Range</th><th>Unit</th><th>Price</th></tr>
++                </thead>
++                <tbody>
++                  {tests.map(t => (
++                    <tr key={t.test_id}>
++                      <td style={{ fontWeight: '600' }}>{t.test_name}</td>
++                      <td style={{ fontSize: '0.85rem' }}>{t.normal_range || '—'}</td>
++                      <td style={{ fontSize: '0.85rem' }}>{t.unit || '—'}</td>
++                      <td style={{ fontWeight: '700', color: 'var(--primary)' }}>{t.price ? `${t.price} PKR` : '—'}</td>
++                    </tr>
++                  ))}
++                </tbody>
++              </table>
++            </div>
++          ))}
++        </div>
++      )}
++
++      {editResult && (
++        <div className="modal-overlay" onClick={() => setEditResult(null)}>
++          <div className="modal-content card" style={{ maxWidth: '440px' }} onClick={e => e.stopPropagation()}>
++            <h2 className="section-title">Enter Lab Result</h2>
++            <p><strong>Patient:</strong> {editResult.patient_name}</p>
++            <p><strong>Test:</strong> {editResult.test_name}</p>
++            <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
++              <div><label>Result Value</label><input type="text" value={editValue} onChange={e => setEditValue(e.target.value)} placeholder="e.g. 4.5 g/dL" /></div>
++              <div>
++                <label>Result Status</label>
++                <select value={editStatus} onChange={e => setEditStatus(e.target.value)}>
++                  <option value="Pending">Pending</option>
++                  <option value="Completed">Completed (Normal)</option>
++                  <option value="Abnormal">Abnormal</option>
++                </select>
++              </div>
++              <div style={{ display: 'flex', gap: '1rem' }}>
++                <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setEditResult(null)}>Cancel</button>
++                <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleUpdateResult}>Save Result</button>
++              </div>
++            </div>
++          </div>
++        </div>
++      )}
++    </div>
++  );
++}
++
++// ============================================================
++// PHARMACY MODULE
++// ============================================================
++function PharmacyModule({ getPharmacyInventory, saveInventoryItem, updateInventoryItem, deleteInventoryItem, recordPharmacySale, getPharmacySales }) {
++  const [view, setView] = useState('inventory'); // inventory | sales | new-item | sell
++  const [inventory, setInventory] = useState([]);
++  const [sales, setSales] = useState([]);
++  const [editItem, setEditItem] = useState(null);
++  const [saleDate, setSaleDate] = useState(new Date().toISOString().split('T')[0]);
++  const [searchTerm, setSearchTerm] = useState('');
++
++  const [form, setForm] = useState({ medicine_name: '', batch_number: '', quantity: '', unit: 'Tablet', purchase_price: '', selling_price: '', expiry_date: '', supplier: '', low_stock_threshold: 10 });
++  const [saleForm, setSaleForm] = useState({ patient_name: '', item_id: '', quantity_sold: 1, payment_method: 'Cash' });
++
++  useEffect(() => { loadInventory(); loadSales(); }, []);
++  useEffect(() => { loadInventory(); }, [searchTerm]);
++  useEffect(() => { loadSales(); }, [saleDate]);
++
++  const loadInventory = async () => setInventory(await getPharmacyInventory(searchTerm) || []);
++  const loadSales = async () => setSales(await getPharmacySales(saleDate) || []);
++
++  const handleSaveItem = async () => {
++    if (!form.medicine_name) { alert('Medicine name required.'); return; }
++    if (editItem) {
++      await updateInventoryItem(editItem.item_id, { ...form, quantity: parseInt(form.quantity) || 0, selling_price: parseFloat(form.selling_price) || 0, low_stock_threshold: parseInt(form.low_stock_threshold) || 10 });
++    } else {
++      await saveInventoryItem({ ...form, quantity: parseInt(form.quantity) || 0, purchase_price: parseFloat(form.purchase_price) || 0, selling_price: parseFloat(form.selling_price) || 0 });
++    }
++    setView('inventory');
++    setForm({ medicine_name: '', batch_number: '', quantity: '', unit: 'Tablet', purchase_price: '', selling_price: '', expiry_date: '', supplier: '', low_stock_threshold: 10 });
++    setEditItem(null);
++    loadInventory();
++  };
++
++  const handleSell = async () => {
++    if (!saleForm.item_id || !saleForm.quantity_sold) { alert('Select medicine and quantity.'); return; }
++    const item = inventory.find(i => i.item_id == saleForm.item_id);
++    if (!item) return;
++    if (item.quantity < saleForm.quantity_sold) { alert(`Insufficient stock. Available: ${item.quantity}`); return; }
++    const today = new Date().toISOString().split('T')[0];
++    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
++    await recordPharmacySale({
++      ...saleForm,
++      quantity_sold: parseInt(saleForm.quantity_sold),
++      medicine_name: item.medicine_name,
++      unit_price: item.selling_price,
++      total_price: item.selling_price * parseInt(saleForm.quantity_sold),
++      sale_date: today, sale_time: time
++    });
++    setSaleForm({ patient_name: '', item_id: '', quantity_sold: 1, payment_method: 'Cash' });
++    setView('sales');
++    loadInventory(); loadSales();
++  };
++
++  const lowStock = inventory.filter(i => i.quantity <= (i.low_stock_threshold || 10));
++  const selectedItem = inventory.find(i => i.item_id == saleForm.item_id);
++  const totalSalesRevenue = sales.reduce((s, sale) => s + (sale.total_price || 0), 0);
++
++  const startEdit = (item) => {
++    setForm({ ...item });
++    setEditItem(item);
++    setView('new-item');
++  };
++
++  return (
++    <div className="tab-content unified-workspace">
++      <div className="section-header">
++        <h1 className="section-title">Pharmacy</h1>
++        <div style={{ display: 'flex', gap: '0.75rem' }}>
++          <button className={`btn ${view === 'inventory' ? 'btn-primary' : 'btn-outline'}`} onClick={() => { setView('inventory'); loadInventory(); }}>📦 Inventory</button>
++          <button className={`btn ${view === 'sales' ? 'btn-primary' : 'btn-outline'}`} onClick={() => { setView('sales'); loadSales(); }}>🧾 Sales</button>
++          <button className={`btn ${view === 'sell' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('sell')}>+ Sell Medicine</button>
++          <button className={`btn ${view === 'new-item' ? 'btn-primary' : 'btn-outline'}`} onClick={() => { setView('new-item'); setEditItem(null); setForm({ medicine_name: '', batch_number: '', quantity: '', unit: 'Tablet', purchase_price: '', selling_price: '', expiry_date: '', supplier: '', low_stock_threshold: 10 }); }}>+ Add Stock</button>
++        </div>
++      </div>
++
++      {/* KPI row */}
++      <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
++        {[
++          { label: 'Total Items', val: inventory.length, color: 'var(--primary)' },
++          { label: 'Low Stock Alerts', val: lowStock.length, color: 'var(--danger)' },
++          { label: "Today's Revenue", val: `${totalSalesRevenue.toLocaleString()} PKR`, color: 'var(--success)' },
++        ].map((s, i) => (
++          <div key={i} className="card" style={{ flex: '1 1 150px', textAlign: 'center', padding: '1rem', borderLeft: `4px solid ${s.color}` }}>
++            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>{s.label}</div>
++            <div style={{ fontSize: typeof s.val === 'string' ? '1.1rem' : '2rem', fontWeight: '800', color: s.color }}>{s.val}</div>
++          </div>
++        ))}
++      </div>
++
++      {/* Low-stock alert banner */}
++      {lowStock.length > 0 && (
++        <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '0.75rem 1.25rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
++          <span style={{ fontSize: '1.25rem' }}>⚠️</span>
++          <div>
++            <div style={{ fontWeight: '700', color: 'var(--danger)', fontSize: '0.9rem' }}>Low Stock Alert</div>
++            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{lowStock.map(i => i.medicine_name).join(', ')}</div>
++          </div>
++        </div>
++      )}
++
++      {view === 'inventory' && (
++        <div className="card">
++          <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', alignItems: 'center' }}>
++            <input type="text" placeholder="Search medicine..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ flex: 1, padding: '0.5rem' }} />
++          </div>
++          <table className="data-table">
++            <thead>
++              <tr><th>Medicine</th><th>Batch</th><th>Qty</th><th>Unit</th><th>Selling Price</th><th>Expiry</th><th>Supplier</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
++            </thead>
++            <tbody>
++              {inventory.map(item => (
++                <tr key={item.item_id} style={item.quantity <= (item.low_stock_threshold || 10) ? { background: 'rgba(239,68,68,0.03)' } : {}}>
++                  <td>
++                    <div style={{ fontWeight: '700' }}>{item.medicine_name}</div>
++                    {item.quantity <= (item.low_stock_threshold || 10) && <span style={{ fontSize: '0.65rem', color: 'var(--danger)', fontWeight: '700' }}>⚠ LOW STOCK</span>}
++                  </td>
++                  <td style={{ fontSize: '0.85rem' }}>{item.batch_number || '—'}</td>
++                  <td style={{ fontWeight: '700', color: item.quantity <= (item.low_stock_threshold || 10) ? 'var(--danger)' : 'inherit' }}>{item.quantity}</td>
++                  <td style={{ fontSize: '0.85rem' }}>{item.unit}</td>
++                  <td style={{ fontWeight: '600', color: 'var(--primary)' }}>{item.selling_price} PKR</td>
++                  <td style={{ fontSize: '0.85rem' }}>{item.expiry_date || '—'}</td>
++                  <td style={{ fontSize: '0.85rem' }}>{item.supplier || '—'}</td>
++                  <td style={{ textAlign: 'right' }}>
++                    <button className="btn btn-outline" style={{ padding: '0.35rem 0.7rem', fontSize: '0.75rem', marginRight: '0.25rem' }} onClick={() => startEdit(item)}>Edit</button>
++                    <button className="btn btn-outline" style={{ padding: '0.35rem 0.7rem', fontSize: '0.75rem', color: 'var(--danger)' }} onClick={async () => { if (confirm(`Delete ${item.medicine_name}?`)) { await deleteInventoryItem(item.item_id); loadInventory(); } }}>Delete</button>
++                  </td>
++                </tr>
++              ))}
++              {inventory.length === 0 && <tr><td colSpan="8" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No inventory items. Add stock to get started.</td></tr>}
++            </tbody>
++          </table>
++        </div>
++      )}
++
++      {view === 'sales' && (
++        <div className="card">
++          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.5rem' }}>
++            <label style={{ margin: 0 }}>Sales Date:</label>
++            <input type="date" value={saleDate} onChange={e => setSaleDate(e.target.value)} style={{ padding: '0.5rem' }} />
++          </div>
++          <table className="data-table">
++            <thead>
++              <tr><th>Patient</th><th>Medicine</th><th>Qty Sold</th><th>Unit Price</th><th>Total</th><th>Payment</th><th>Time</th></tr>
++            </thead>
++            <tbody>
++              {sales.map(s => (
++                <tr key={s.sale_id}>
++                  <td>{s.patient_name || 'OTC'}</td>
++                  <td style={{ fontWeight: '600' }}>{s.medicine_name}</td>
++                  <td>{s.quantity_sold}</td>
++                  <td>{s.unit_price} PKR</td>
++                  <td style={{ fontWeight: '700', color: 'var(--success)' }}>{s.total_price} PKR</td>
++                  <td>{s.payment_method}</td>
++                  <td style={{ fontSize: '0.85rem' }}>{s.sale_time}</td>
++                </tr>
++              ))}
++              {sales.length === 0 && <tr><td colSpan="7" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No sales for this date.</td></tr>}
++              {sales.length > 0 && (
++                <tr style={{ background: 'rgba(16,185,129,0.05)', fontWeight: '700' }}>
++                  <td colSpan="4" style={{ textAlign: 'right' }}>Total Revenue:</td>
++                  <td style={{ color: 'var(--success)' }}>{totalSalesRevenue.toLocaleString()} PKR</td>
++                  <td colSpan="2" />
++                </tr>
++              )}
++            </tbody>
++          </table>
++        </div>
++      )}
++
++      {view === 'new-item' && (
++        <div className="card" style={{ maxWidth: '720px' }}>
++          <h2 className="section-title" style={{ fontSize: '1.1rem', marginBottom: '1.5rem' }}>{editItem ? 'Edit Inventory Item' : 'Add New Stock'}</h2>
++          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
++            <div className="grid-2" style={{ gap: '1rem' }}>
++              <div><label>Medicine Name *</label><input type="text" value={form.medicine_name} onChange={e => setForm(f => ({ ...f, medicine_name: e.target.value }))} /></div>
++              <div><label>Batch Number</label><input type="text" value={form.batch_number} onChange={e => setForm(f => ({ ...f, batch_number: e.target.value }))} /></div>
++            </div>
++            <div className="grid-2" style={{ gap: '1rem' }}>
++              <div><label>Quantity</label><input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} /></div>
++              <div>
++                <label>Unit</label>
++                <select value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}>
++                  <option>Tablet</option><option>Capsule</option><option>Syrup (ml)</option><option>Injection</option><option>Sachet</option><option>Strip</option>
++                </select>
++              </div>
++            </div>
++            <div className="grid-2" style={{ gap: '1rem' }}>
++              <div><label>Purchase Price (PKR)</label><input type="number" value={form.purchase_price} onChange={e => setForm(f => ({ ...f, purchase_price: e.target.value }))} /></div>
++              <div><label>Selling Price (PKR)</label><input type="number" value={form.selling_price} onChange={e => setForm(f => ({ ...f, selling_price: e.target.value }))} /></div>
++            </div>
++            <div className="grid-2" style={{ gap: '1rem' }}>
++              <div><label>Expiry Date</label><input type="date" value={form.expiry_date} onChange={e => setForm(f => ({ ...f, expiry_date: e.target.value }))} /></div>
++              <div><label>Low Stock Alert (qty)</label><input type="number" value={form.low_stock_threshold} onChange={e => setForm(f => ({ ...f, low_stock_threshold: e.target.value }))} /></div>
++            </div>
++            <div><label>Supplier</label><input type="text" value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))} /></div>
++            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
++              <button className="btn btn-primary" onClick={handleSaveItem}>{editItem ? 'Update' : 'Save Item'}</button>
++              <button className="btn btn-outline" onClick={() => { setView('inventory'); setEditItem(null); }}>Cancel</button>
++            </div>
++          </div>
++        </div>
++      )}
++
++      {view === 'sell' && (
++        <div className="card" style={{ maxWidth: '560px' }}>
++          <h2 className="section-title" style={{ fontSize: '1.1rem', marginBottom: '1.5rem' }}>Sell Medicine</h2>
++          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
++            <div><label>Patient Name (Optional)</label><input type="text" value={saleForm.patient_name} onChange={e => setSaleForm(f => ({ ...f, patient_name: e.target.value }))} placeholder="OTC or patient name..." /></div>
++            <div>
++              <label>Select Medicine *</label>
++              <select value={saleForm.item_id} onChange={e => setSaleForm(f => ({ ...f, item_id: e.target.value, quantity_sold: 1 }))}>
++                <option value="">Choose medicine...</option>
++                {inventory.filter(i => i.quantity > 0).map(i => <option key={i.item_id} value={i.item_id}>{i.medicine_name} — Stock: {i.quantity} — {i.selling_price} PKR</option>)}
++              </select>
++            </div>
++            {selectedItem && (
++              <div style={{ padding: '0.75rem 1rem', background: 'var(--primary-light)', borderRadius: '10px', fontSize: '0.85rem' }}>
++                <strong>{selectedItem.medicine_name}</strong> &nbsp;|&nbsp; In stock: {selectedItem.quantity} {selectedItem.unit} &nbsp;|&nbsp; Price: {selectedItem.selling_price} PKR each
++              </div>
++            )}
++            <div className="grid-2" style={{ gap: '1rem' }}>
++              <div><label>Quantity</label><input type="number" min="1" value={saleForm.quantity_sold} onChange={e => setSaleForm(f => ({ ...f, quantity_sold: e.target.value }))} /></div>
++              <div>
++                <label>Payment Method</label>
++                <select value={saleForm.payment_method} onChange={e => setSaleForm(f => ({ ...f, payment_method: e.target.value }))}>
++                  <option>Cash</option><option>Card</option><option>Online</option>
++                </select>
++              </div>
++            </div>
++            {selectedItem && saleForm.quantity_sold > 0 && (
++              <div style={{ textAlign: 'right', fontSize: '1.25rem', fontWeight: '800', color: 'var(--primary)' }}>
++                Total: {(selectedItem.selling_price * parseInt(saleForm.quantity_sold || 0)).toLocaleString()} PKR
++              </div>
++            )}
++            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
++              <button className="btn btn-primary" onClick={handleSell}>Complete Sale</button>
++              <button className="btn btn-outline" onClick={() => setView('inventory')}>Cancel</button>
++            </div>
++          </div>
++        </div>
++      )}
++    </div>
++  );
++}
++
++// Dashboard Icons
++const IconDashboard = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>;
++const IconBed = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4v16"></path><path d="M2 8h18a2 2 0 0 1 2 2v10"></path><path d="M2 17h20"></path><path d="M6 8v9"></path></svg>;
++const IconRevenue = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>;
++const IconFlask = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3h6l1 9H8L9 3z"/><path d="M6.8 21a2 2 0 0 0 1.72 1h7a2 2 0 0 0 1.72-1l2.28-4H4.5L6.8 21z"/><path d="M3 15h18"/></svg>;
++const IconPill = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg>;
++
++
++// Dashboard Component — E-Educate style
++function Dashboard({ getAppointments, getDoctors, getTodayPayments, getRevenueStats, currentUser, setActiveTab }) {
++  const [stats, setStats] = useState({
++    totalPatients: 0, doctorsAvailable: 0, todayAppointments: 0, todayRevenue: 0,
++    completed: 0, pending: 0, cancelled: 0, weekData: []
++  });
++
++  useEffect(() => { loadDashboardData(); }, []);
++
++  const loadDashboardData = async () => {
++    const today = new Date().toISOString().split('T')[0];
++    const [appts, docs, payments] = await Promise.all([
++      getAppointments({ exact: today }),
++      getDoctors(),
++      getTodayPayments(today)
++    ]);
++
++    const totalRevenue = (payments || []).reduce((sum, p) => sum + (p.total_amount || 0), 0);
++    const completed = (appts || []).filter(a => a.status === 'Completed').length;
++    const pending = (appts || []).filter(a => a.status === 'Pending').length;
++    const cancelled = (appts || []).filter(a => a.status === 'Cancelled').length;
++
++    // Build last 7 days data
++    const weekData = [];
++    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
++    for (let i = 6; i >= 0; i--) {
++      const d = new Date();
++      d.setDate(d.getDate() - i);
++      const dateStr = d.toISOString().split('T')[0];
++      const dayAppts = await getAppointments({ exact: dateStr });
++      weekData.push({ day: dayNames[d.getDay()], count: (dayAppts || []).length, date: dateStr });
++    }
++
++    setStats({
++      totalPatients: (payments || []).length,
++      doctorsAvailable: (docs || []).length,
++      todayAppointments: (appts || []).length,
++      todayRevenue: totalRevenue,
++      completed, pending, cancelled, weekData
++    });
++  };
++
++  const getGreeting = () => {
++    const hour = new Date().getHours();
++    if (hour < 12) return 'Good Morning';
++    if (hour < 17) return 'Good Afternoon';
++    return 'Good Evening';
++  };
++
++  const maxBarValue = Math.max(...stats.weekData.map(d => d.count), 1);
++
++  return (
++    <div className="tab-content">
++      {/* Welcome Banner */}
++      <div className="dashboard-welcome-banner">
++        <span>Welcome to HealthBridge — Your complete hospital management platform</span>
++        <button className="btn-icon" style={{ color: 'white' }} onClick={() => {}}><IconClose /></button>
++      </div>
++
++      {/* Greeting */}
++      <div className="dashboard-greeting-row">
++        <div>
++          <h1 className="dashboard-greeting-title">
++            {getGreeting()}, {currentUser?.full_name || 'Doctor'} 👋
++          </h1>
++          <p className="dashboard-greeting-subtitle">Here's what's happening in your hospital today.</p>
++        </div>
++        <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
++          <button className="btn btn-primary" onClick={() => setActiveTab('appointments')}>New Appointment</button>
++          <button className="btn btn-outline" onClick={() => setActiveTab('reports')}>AI Reports</button>
++        </div>
++      </div>
++
++      {/* KPI Cards */}
++      <div className="kpi-grid">
++        <div className="kpi-card">
++          <div className="kpi-card-info">
++            <h3>Total Patients</h3>
++            <div className="kpi-number">{stats.totalPatients}</div>
++            <div className="kpi-subtitle" style={{ color: 'var(--success)' }}>Seen today</div>
++          </div>
++          <div className="kpi-icon" style={{ background: 'var(--blue-light)' }}>
++            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
++          </div>
++        </div>
++
++        <div className="kpi-card">
++          <div className="kpi-card-info">
++            <h3>Doctors Available</h3>
++            <div className="kpi-number">{stats.doctorsAvailable}</div>
++            <div className="kpi-subtitle" style={{ color: 'var(--success)' }}>Active staff</div>
++          </div>
++          <div className="kpi-icon" style={{ background: 'var(--success-light)' }}>
++            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"></path><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"></path><circle cx="20" cy="10" r="2"></circle></svg>
++          </div>
++        </div>
++
++        <div className="kpi-card">
++          <div className="kpi-card-info">
++            <h3>Appointments Today</h3>
++            <div className="kpi-number">{stats.todayAppointments}</div>
++            <div className="kpi-subtitle" style={{ color: 'var(--primary)' }}>{stats.pending} pending</div>
++          </div>
++          <div className="kpi-icon" style={{ background: 'var(--purple-light)' }}>
++            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
++          </div>
++        </div>
++
++        <div className="kpi-card">
++          <div className="kpi-card-info">
++            <h3>Today Revenue</h3>
++            <div className="kpi-number">{stats.todayRevenue.toLocaleString()}</div>
++            <div className="kpi-subtitle" style={{ color: 'var(--success)' }}>PKR collected</div>
++          </div>
++          <div className="kpi-icon" style={{ background: 'var(--primary-light)' }}>
++            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
++          </div>
++        </div>
++      </div>
++
++      {/* Charts Row */}
++      <div className="dashboard-charts-grid">
++        {/* Appointment Trend */}
++        <div className="chart-card">
++          <div className="chart-card-header">
++            <h3 className="chart-card-title">Appointment Trend (Last 7 Days)</h3>
++            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: '#F1F5F9', padding: '0.25rem 0.75rem', borderRadius: '100px', fontWeight: '600' }}>Daily</span>
++          </div>
++          <div className="simple-bar-chart">
++            {stats.weekData.map((d, i) => (
++              <div key={i} className="bar-column">
++                <div
++                  className="bar-fill"
++                  style={{
++                    height: `${(d.count / maxBarValue) * 100}%`,
++                    background: i === stats.weekData.length - 1 ? 'var(--primary)' : 'var(--accent)'
++                  }}
++                ></div>
++                <span className="bar-label">{d.day}</span>
++              </div>
++            ))}
++          </div>
++        </div>
++
++        {/* Today Summary */}
++        <div className="chart-card">
++          <h3 className="chart-card-title" style={{ marginBottom: '1rem' }}>Today's Summary</h3>
++          <div>
++            <div className="summary-stat-row">
++              <span className="summary-stat-label">Patients Today</span>
++              <span className="summary-stat-value">{stats.totalPatients}</span>
++            </div>
++            <div className="summary-stat-row">
++              <span className="summary-stat-label">Completed</span>
++              <span className="summary-stat-value" style={{ color: 'var(--success)' }}>{stats.completed}</span>
++            </div>
++            <div className="summary-stat-row">
++              <span className="summary-stat-label">Pending</span>
++              <span className="summary-stat-value" style={{ color: 'var(--primary)' }}>{stats.pending}</span>
++            </div>
++            <div className="summary-stat-row">
++              <span className="summary-stat-label">Cancelled</span>
++              <span className="summary-stat-value" style={{ color: 'var(--danger)' }}>{stats.cancelled}</span>
++            </div>
++            <div className="summary-stat-row">
++              <span className="summary-stat-label">Revenue</span>
++              <span className="summary-stat-value" style={{ color: 'var(--success)' }}>{stats.todayRevenue.toLocaleString()} PKR</span>
++            </div>
++          </div>
++
++          {/* Quick Health Score */}
++          <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--success-light)', borderRadius: 'var(--radius)', textAlign: 'center' }}>
++            <div style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: '600', marginBottom: '0.25rem' }}>🏥 Clinic Health Score</div>
++            <div style={{ fontSize: '2rem', fontWeight: '800', color: 'var(--success)' }}>
++              {stats.todayAppointments > 0 ? Math.round((stats.completed / stats.todayAppointments) * 100) : 0}
++              <span style={{ fontSize: '0.85rem', fontWeight: '500' }}> /100</span>
++            </div>
++          </div>
++        </div>
++      </div>
++
++      {/* Bottom Row: Recent Activity + Quick Actions */}
++      <div className="dashboard-charts-grid">
++        <div className="chart-card">
++          <div className="chart-card-header">
++            <h3 className="chart-card-title">Quick Actions</h3>
++          </div>
++          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
++            <button className="btn btn-outline" style={{ padding: '1rem', justifyContent: 'flex-start', gap: '0.75rem' }} onClick={() => setActiveTab('prescription')}>
++              <IconPlus /> New Prescription
++            </button>
++            <button className="btn btn-outline" style={{ padding: '1rem', justifyContent: 'flex-start', gap: '0.75rem' }} onClick={() => setActiveTab('reception')}>
++              <IconUser /> Walk-in Patient
++            </button>
++            <button className="btn btn-outline" style={{ padding: '1rem', justifyContent: 'flex-start', gap: '0.75rem' }} onClick={() => setActiveTab('queue')}>
++              <IconMenu /> Doctor Queue
++            </button>
++            <button className="btn btn-outline" style={{ padding: '1rem', justifyContent: 'flex-start', gap: '0.75rem' }} onClick={() => setActiveTab('reports')}>
++              <IconReportAnalytics /> View Reports
++            </button>
++          </div>
++        </div>
++
++        <div className="chart-card">
++          <div className="chart-card-header">
++            <h3 className="chart-card-title">Status Overview</h3>
++          </div>
++          <div style={{ display: 'flex', gap: '0.75rem' }}>
++            <div style={{ flex: 1, padding: '1rem', background: 'var(--danger-light)', borderRadius: 'var(--radius)', textAlign: 'center' }}>
++              <div style={{ fontSize: '1.5rem', fontWeight: '800', color: 'var(--danger)' }}>{stats.cancelled}</div>
++              <div style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--danger)' }}>Cancelled</div>
++            </div>
++            <div style={{ flex: 1, padding: '1rem', background: 'var(--success-light)', borderRadius: 'var(--radius)', textAlign: 'center' }}>
++              <div style={{ fontSize: '1.5rem', fontWeight: '800', color: 'var(--success)' }}>{stats.completed}</div>
++              <div style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--success)' }}>Completed</div>
++            </div>
++            <div style={{ flex: 1, padding: '1rem', background: 'var(--primary-light)', borderRadius: 'var(--radius)', textAlign: 'center' }}>
++              <div style={{ fontSize: '1.5rem', fontWeight: '800', color: 'var(--primary)' }}>{stats.pending}</div>
++              <div style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--primary)' }}>Pending</div>
++            </div>
++          </div>
++        </div>
++      </div>
++    </div>
++  );
++}
++
++function LoginScreen({ onLogin, authenticateUser }) {
++  const [username, setUsername] = useState('');
++  const [password, setPassword] = useState('');
++  const [error, setError] = useState('');
++  const [isLoggingIn, setIsLoggingIn] = useState(false);
++
++  const handleLogin = async (e) => {
++    e.preventDefault();
++    setIsLoggingIn(true);
++    setError('');
++    try {
++      const user = await authenticateUser(username, password);
++      if (user) {
++        onLogin(user);
++      } else {
++        setError('Invalid username or password, or account disabled.');
++      }
++    } catch (err) {
++      setError('An error occurred during login.');
++    } finally {
++      setIsLoggingIn(false);
++    }
++  };
++
++  return (
++    <div style={{ display: 'flex', width: '100%', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', padding: '1rem' }}>
++      <div className="card" style={{ width: '100%', maxWidth: '420px', padding: '2.5rem 2rem', textAlign: 'center' }}>
++        <div style={{ background: 'var(--primary)', color: 'white', width: '56px', height: '56px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.25rem', margin: '0 auto 1.5rem auto' }}>Dr</div>
++        <h1 style={{ fontSize: '1.4rem', marginBottom: '0.35rem', color: 'var(--text-main)' }}>Clinic Login</h1>
++        <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.85rem' }}>Enter your credentials to access the system</p>
++        
++        {error && <div style={{ color: 'var(--danger)', background: 'var(--danger-light)', padding: '0.75rem', borderRadius: '10px', marginBottom: '1.5rem', fontSize: '0.85rem' }}>{error}</div>}
++        
++        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
++          <div>
++            <input 
++              type="text" 
++              placeholder="Username" 
++              value={username} 
++              onChange={e => setUsername(e.target.value)} 
++              required
++              style={{ padding: '0.85rem 1rem', width: '100%' }}
++            />
++          </div>
++          <div>
++            <input 
++              type="password" 
++              placeholder="Password" 
++              value={password} 
++              onChange={e => setPassword(e.target.value)} 
++              required
++              style={{ padding: '0.85rem 1rem', width: '100%' }}
++            />
++          </div>
++          <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem', padding: '0.85rem' }} disabled={isLoggingIn}>
++            {isLoggingIn ? 'Authenticating...' : 'Login'}
++          </button>
++        </form>
++      </div>
++    </div>
++  );
++}
++
++function App() {
++  const {
++    getPatients, savePatient, savePrescription, getPrescriptions, getPrescriptionDetails,
++    getDosagePresets, saveDosagePreset, deleteDosagePreset,
++    getMedicinePresets, saveMedicinePreset, deleteMedicinePreset,
++    getTestPresets, saveTestPreset, deleteTestPreset,
++    getAdvicePresets, saveAdvicePreset, deleteAdvicePreset,
++    updateDosagePreset, updateMedicinePreset, updateTestPreset, updateAdvicePreset,
++    getSettings, saveSetting,
++    getDoctors, saveDoctor, updateDoctor, deleteDoctor,
++    getAppointments, saveAppointment, updateAppointmentStatus, deleteAppointment, updateReminderStatus,
++    getUsers, saveUser, updateUser, deleteUser, authenticateUser,
++    getDailyToken, collectPayment, getTodayPayments, getQueue, updateQueueStatus, getRevenueStats, getDoctorSummaryTotals,
++    getTemplates, saveTemplate, deleteTemplate,
++    // IPD / Bed
++    getWards, getBeds, saveBed, getAdmissions, admitPatient, dischargePatient,
++    // Lab
++    getLabCatalog, saveLabCatalogItem, getLabResults, saveLabResult, updateLabResult,
++    // Pharmacy
++    getPharmacyInventory, saveInventoryItem, updateInventoryItem, deleteInventoryItem, recordPharmacySale, getPharmacySales,
++    loading
++  } = useDatabase();
++
++  const [currentUser, setCurrentUser] = useState(null);
++
++  const [settings, setSettings] = useState({ top_offset: '0', left_offset: '0' });
++  const [systemInfo, setSystemInfo] = useState({ version: '1.0', migrations: [] });
++  const [settingsSubTab, setSettingsSubTab] = useState('presets'); // presets, system
++
++  const [activeTab, setActiveTab] = useState('dashboard');
++  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
++  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
++  const [romanUrduMode, setRomanUrduMode] = useState(true);
++
++  const pageTitles = {
++    dashboard: 'Dashboard',
++    prescription: 'New Prescription',
++    records: 'Patient Records',
++    reception: 'Reception Desk',
++    queue: 'Doctor Queue',
++    appointments: 'Appointments',
++    doctors: 'Doctors',
++    users: 'User Management',
++    reports: 'Reports',
++    settings: 'Master Data',
++    ipd: 'IPD & Bed Management',
++    lab: 'Lab Management',
++    pharmacy: 'Pharmacy',
++  };
++  const [patient, setPatient] = useState({
++    id: null, name: '', age: '', gender: 'Male', phone: '',
++    date: new Date().toISOString().split('T')[0], address: '', symptoms: ''
++  })
++  const [medicines, setMedicines] = useState([{ id: Date.now(), english: '', urdu_dosage: '', frequency: '', duration: '' }])
++  const [tests, setTests] = useState([])
++  const [adviceText, setAdviceText] = useState('')
++  const [structuredAdvice, setStructuredAdvice] = useState({
++    diet: '',
++    sitting: '',
++    commode: '',
++    work: '',
++    emergency: ''
++  })
++  const [showPreview, setShowPreview] = useState(false)
++
++  // Master Data State
++  const [masterDosages, setMasterDosages] = useState([])
++  const [masterMedicines, setMasterMedicines] = useState([])
++  const [masterTests, setMasterTests] = useState([])
++  const [masterAdvice, setMasterAdvice] = useState([])
++
++  // Queue State
++  const [currentQueueItem, setCurrentQueueItem] = useState(null);
++  const [lastPaymentPrint, setLastPaymentPrint] = useState(null);
++
++  // Records State
++  const [records, setRecords] = useState([])
++  const [recordSearch, setRecordSearch] = useState('')
++
++  // Search/Autocomplete State
++  const [patientResults, setPatientResults] = useState([])
++  const [medResults, setMedResults] = useState({ index: null, results: [] })
++  const [testResults, setTestResults] = useState({ index: null, results: [] })
++  const [dosageResults, setDosageResults] = useState({ index: null, results: [] })
++  
++  // Template State
++  const [templates, setTemplates] = useState([]);
++  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
++  const [showLoadTemplateModal, setShowLoadTemplateModal] = useState(false);
++  const [searchTemplate, setSearchTemplate] = useState('');
++
++  useEffect(() => {
++    loadMasterData();
++    loadSettings();
++    loadTemplates();
++    fetchSystemInfo();
++  }, []);
++
++  // ==========================================
++  // REMINDER AUTO-SCHEDULER
++  // ==========================================
++  useEffect(() => {
++    // Helper function that does the actual checking
++    const checkAndSendReminders = async () => {
++      try {
++        const s = await getSettings();
++        if (s?.reminder_enabled !== 'true' || !s?.reminder_callmebot_apikey) return;
++
++        const timing = s.reminder_timing || 'morning'; // 'morning' or '2hours'
++        const today = new Date().toISOString().split('T')[0];
++        const now = new Date();
++        const currentHour = now.getHours();
++
++        // If timing is morning, only send between 9 AM and 10 AM
++        if (timing === 'morning' && (currentHour < 9 || currentHour >= 11)) return;
++
++        const appointments = await getAppointments({ exact: today });
++        if (!appointments || appointments.length === 0) return;
++
++        for (const appt of appointments) {
++          // Skip if already sent, or no phone number, or cancelled/completed
++          if (appt.reminder_sent || !appt.phone_number || appt.status !== 'Pending') continue;
++
++          // If timing is 2hours, check if appointment is within the next 2-3 hours
++          if (timing === '2hours' && appt.appointment_time) {
++            // Parse appointment time (e.g. "14:30" or "02:30 PM")
++            // A simple check: if the hour difference is ~2
++            const [timeStr, modifier] = appt.appointment_time.split(' ');
++            let [apptHour, apptMin] = timeStr.split(':').map(Number);
++            if (modifier === 'PM' && apptHour < 12) apptHour += 12;
++            if (modifier === 'AM' && apptHour === 12) apptHour = 0;
++            
++            const hoursDiff = apptHour - currentHour;
++            // Only send if it's 2 or 3 hours away
++            if (hoursDiff < 1 || hoursDiff > 3) continue;
++          }
++
++          // Send WhatsApp via CallMeBot
++          try {
++            const timeStr = appt.appointment_time || 'Scheduled';
++            const docName = appt.doctor_name || 'Doctor';
++            const msg = `Hello ${appt.patient_name},\n\nYaad dahani: Aaj apka appointment hai ${timeStr} baje Dr. ${docName} ke saath Neuro Clinic mein.\n\nShukriya.`;
++            await sendWhatsAppReminder(appt.phone_number, msg, s.reminder_callmebot_apikey);
++            await updateReminderStatus(appt.appointment_id, true);
++            console.log(`Auto-reminder sent to ${appt.patient_name}`);
++          } catch (err) {
++            console.error('Auto-reminder failed for', appt.patient_name, err);
++          }
++        }
++      } catch (err) {
++        console.error('Error in reminder auto-scheduler:', err);
++      }
++    };
++
++    // Run once after 5 seconds of app load
++    setTimeout(checkAndSendReminders, 5000);
++
++    // Then run every 60 minutes
++    const interval = setInterval(checkAndSendReminders, 60 * 60 * 1000);
++    return () => clearInterval(interval);
++  }, []); // Empty dep array = runs on mount only
++  // ==========================================
++
++  const fetchSystemInfo = async () => {
++    if (window.electronAPI && window.electronAPI.getSystemInfo) {
++      const res = await window.electronAPI.getSystemInfo();
++      if (res.success) setSystemInfo({ version: res.version, migrations: res.migrations });
++    }
++  }
++
++  const loadSettings = async () => {
++    try {
++      const s = await getSettings();
++      if (s) setSettings(s);
++    } catch (e) {
++      console.error('Failed to load settings:', e);
++    }
++  }
++
++  useEffect(() => {
++    if (activeTab === 'records') {
++      loadRecords();
++    }
++  }, [activeTab, recordSearch]);
++
++  const loadMasterData = async () => {
++    try {
++      const [doses, meds, tests, advice] = await Promise.all([
++        getDosagePresets(),
++        getMedicinePresets(),
++        getTestPresets(),
++        getAdvicePresets()
++      ]);
++      setMasterDosages(doses || []);
++      setMasterMedicines(meds || []);
++      setMasterTests(tests || []);
++      setMasterAdvice(advice || []);
+     } catch (e) {
+       console.error('Failed to load master data:', e);
+     }
+@@ -1903,7 +3423,7 @@ function App() {
+           setCurrentUser(user);
+           if (user.role === 'Receptionist') setActiveTab('reception');
+           else if (user.role === 'Doctor') setActiveTab('queue');
+-          else setActiveTab('prescription');
++          else setActiveTab('dashboard');
+         }} 
+         authenticateUser={authenticateUser} 
+       />
+@@ -1914,7 +3434,7 @@ function App() {
+     <>
+       {/* Mobile Top Header */}
+       <div className="mobile-header">
+-        <button className="btn-icon" onClick={() => setIsMobileSidebarOpen(true)} style={{ minWidth: 44, minHeight: 44 }}>
++        <button className="btn-icon" onClick={() => setIsMobileSidebarOpen(true)} style={{ minWidth: 40, minHeight: 40 }}>
+           <IconMenu />
+         </button>
+         <span className="mobile-page-title">{pageTitles[activeTab] || 'Clinic'}</span>
+@@ -1930,98 +3450,135 @@ function App() {
+         )}
+ 
+         <div className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''} ${isMobileSidebarOpen ? 'mobile-open' : ''}`}>
+-          <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: isSidebarCollapsed ? 'center' : 'space-between', marginBottom: '2rem', paddingLeft: isSidebarCollapsed ? '0' : '0.5rem' }}>
++          {/* Brand */}
++          <div style={{ display: 'flex', alignItems: 'center', justifyContent: isSidebarCollapsed ? 'center' : 'space-between', marginBottom: '1.25rem', paddingLeft: isSidebarCollapsed ? '0' : '0.25rem' }}>
+             {!isSidebarCollapsed && (
+               <div className="brand" style={{ margin: 0, paddingLeft: 0, marginBottom: 0 }}>
+-                <div style={{ background: 'var(--primary)', color: 'white', width: '36px', height: '36px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>Dr</div>
+-                <span className="nav-text">Iqbal Kharal</span>
++                <div style={{ background: 'var(--success)', color: 'white', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.8rem' }}>🏥</div>
++                <span className="nav-text" style={{ fontSize: '1rem' }}>HealthBridge</span>
+               </div>
+             )}
+-            <button className="btn-icon" onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} title="Toggle Sidebar">
++            <button className="btn-icon" onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} title="Toggle Sidebar" style={{ padding: '0.35rem' }}>
+               <IconMenu />
+             </button>
+           </div>
+ 
+-          <div style={{ padding: isSidebarCollapsed ? '0' : '0 0.5rem', marginBottom: '2rem' }}>
+-             <button onClick={handleLogout} className="btn btn-danger" style={{ width: '100%', padding: '0.75rem', display: 'flex', justifyContent: 'center', gap: '0.5rem', alignItems: 'center', borderRadius: '12px', fontWeight: 'bold' }} title="Sign Out">
+-               <IconLogout /> {!isSidebarCollapsed && "Sign Out"}
+-             </button>
++          {!isSidebarCollapsed && (
++            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', paddingLeft: '1rem', marginBottom: '1.25rem' }}>Neuro Tower Clinic</div>
++          )}
++
++          {/* OVERVIEW Section */}
++          <div className="nav-section-label">OVERVIEW</div>
++          <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => { setActiveTab('dashboard'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "Dashboard" : ""}>
++            <IconDashboard /> <span className="nav-text">Dashboard</span>
++          </div>
++          <div className={`nav-item ${activeTab === 'appointments' ? 'active' : ''}`} onClick={() => { setActiveTab('appointments'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "Appointments" : ""}>
++            <IconCalendarEvent /> <span className="nav-text">Appointments</span>
+           </div>
+ 
++          {/* CLINICAL Section */}
+           {['Admin', 'Doctor'].includes(currentUser.role) && (
+             <>
++              <div className="nav-section-label">CLINICAL</div>
+               <div className={`nav-item ${activeTab === 'prescription' ? 'active' : ''}`} onClick={() => { setActiveTab('prescription'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "New Prescription" : ""}>
+                 <IconPlus /> <span className="nav-text">New Prescription</span>
+               </div>
+               <div className={`nav-item ${activeTab === 'records' ? 'active' : ''}`} onClick={() => { setActiveTab('records'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "Patient Records" : ""}>
+                 <IconHistory /> <span className="nav-text">Patient Records</span>
+               </div>
++              <div className={`nav-item ${activeTab === 'queue' ? 'active' : ''}`} onClick={() => { setActiveTab('queue'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "Doctor Queue" : ""}>
++                <IconClipboard /> <span className="nav-text">Doctor Queue</span>
++              </div>
+             </>
+           )}
+ 
+-          <div style={{ height: '1px', background: 'var(--glass-border)', margin: '1rem 0' }}></div>
++          {/* ADVANCED Section */}
++          {['Admin', 'Doctor'].includes(currentUser.role) && (
++            <>
++              <div className="nav-section-label">ADVANCED</div>
++              <div className={`nav-item ${activeTab === 'ipd' ? 'active' : ''}`} onClick={() => { setActiveTab('ipd'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "IPD & Beds" : ""}>
++                <IconBed /> <span className="nav-text">IPD & Beds</span>
++              </div>
++              <div className={`nav-item ${activeTab === 'lab' ? 'active' : ''}`} onClick={() => { setActiveTab('lab'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "Lab Management" : ""}>
++                <IconFlask /> <span className="nav-text">Lab Management</span>
++              </div>
++              <div className={`nav-item ${activeTab === 'pharmacy' ? 'active' : ''}`} onClick={() => { setActiveTab('pharmacy'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "Pharmacy" : ""}>
++                <IconPill /> <span className="nav-text">Pharmacy</span>
++              </div>
++            </>
++          )}
+ 
++          {/* FINANCE Section */}
++          <div className="nav-section-label">FINANCE</div>
+           {['Admin', 'Receptionist'].includes(currentUser.role) && (
+             <div className={`nav-item ${activeTab === 'reception' ? 'active' : ''}`} onClick={() => { setActiveTab('reception'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "Reception Desk" : ""}>
+               <IconUser /> <span className="nav-text">Reception Desk</span>
+             </div>
+           )}
+-
+           {['Admin', 'Doctor'].includes(currentUser.role) && (
+-            <div className={`nav-item ${activeTab === 'queue' ? 'active' : ''}`} onClick={() => { setActiveTab('queue'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "Doctor Queue" : ""}>
+-              <IconMenu /> <span className="nav-text">Doctor Queue</span>
++            <div className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => { setActiveTab('reports'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "Reports" : ""}>
++              <IconReportAnalytics /> <span className="nav-text">Reports</span>
+             </div>
+           )}
+ 
+-          <div className={`nav-item ${activeTab === 'appointments' ? 'active' : ''}`} onClick={() => { setActiveTab('appointments'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "Appointments" : ""}>
+-            <IconCalendarEvent /> <span className="nav-text">Appointments</span>
+-          </div>
+-
++          {/* HR Section */}
++          <div className="nav-section-label">HR</div>
+           {['Admin', 'Receptionist'].includes(currentUser.role) && (
+             <div className={`nav-item ${activeTab === 'doctors' ? 'active' : ''}`} onClick={() => { setActiveTab('doctors'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "Doctors" : ""}>
+               <IconStethoscope /> <span className="nav-text">Doctors</span>
+             </div>
+           )}
+-
+           {currentUser.role === 'Admin' && (
+             <div className={`nav-item ${activeTab === 'users' ? 'active' : ''}`} onClick={() => { setActiveTab('users'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "User Management" : ""}>
+               <IconUsers /> <span className="nav-text">User Management</span>
+             </div>
+           )}
+-
+-          {['Admin', 'Doctor'].includes(currentUser.role) && (
+-            <div className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => { setActiveTab('reports'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "Reports" : ""}>
+-              <IconReportAnalytics /> <span className="nav-text">Reports</span>
+-            </div>
+-          )}
+-
+-          <div style={{ height: '1px', background: 'var(--glass-border)', margin: '1rem 0' }}></div>
+-
+           {['Admin', 'Doctor'].includes(currentUser.role) && (
+             <div className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setIsMobileSidebarOpen(false); }} title={isSidebarCollapsed ? "Master Data" : ""}>
+               <IconSettings /> <span className="nav-text">Master Data</span>
+             </div>
+           )}
+ 
+-          <div className="sidebar-footer" style={{ marginTop: 'auto', padding: isSidebarCollapsed ? '0.5rem' : '1rem', background: 'var(--primary-light)', borderRadius: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+-            <label style={{ display: 'flex', alignItems: 'center', justifySelf: 'flex-start', gap: '0.5rem', cursor: 'pointer', margin: 0, color: 'var(--primary)', fontSize: '0.75rem' }} title={isSidebarCollapsed ? "Roman to Urdu" : ""}>
++          {/* Footer — User Info */}
++          <div style={{ marginTop: 'auto', padding: isSidebarCollapsed ? '0.4rem' : '0.75rem', borderTop: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
++            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', margin: 0, color: 'var(--text-secondary)', fontSize: '0.75rem' }} title={isSidebarCollapsed ? "Roman to Urdu" : ""}>
+               <input type="checkbox" checked={romanUrduMode} onChange={(e) => setRomanUrduMode(e.target.checked)} style={{ width: 'auto' }} />
+-              <span className="nav-text">Roman to Urdu Mode</span>
++              <span className="nav-text">Roman → Urdu</span>
+             </label>
+             {!isSidebarCollapsed && (
+-              <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: '0.5rem', marginTop: '0.5rem' }}>
+-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', background: 'rgba(255,255,255,0.5)', borderRadius: '8px' }}>
+-                  <div style={{ width: '8px', height: '8px', background: 'var(--success)', borderRadius: '50%' }}></div>
+-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+-                    <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>{currentUser.full_name}</span>
+-                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{currentUser.role}</span>
+-                  </div>
++              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.6rem 0.5rem', background: '#F8FAFC', borderRadius: '10px' }}>
++                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '0.8rem', flexShrink: 0 }}>
++                  {currentUser.full_name ? currentUser.full_name[0].toUpperCase() : 'U'}
+                 </div>
++                <div style={{ flex: 1, minWidth: 0 }}>
++                  <div style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentUser.full_name}</div>
++                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{currentUser.role}</div>
++                </div>
++                <button onClick={handleLogout} className="btn-icon" title="Sign Out" style={{ padding: '0.35rem', color: 'var(--danger)' }}>
++                  <IconLogout />
++                </button>
+               </div>
+             )}
++            {isSidebarCollapsed && (
++              <button onClick={handleLogout} className="btn-icon" title="Sign Out" style={{ color: 'var(--danger)', margin: '0 auto' }}>
++                <IconLogout />
++              </button>
++            )}
+           </div>
+         </div>
+         <div className="main-content">
++          {/* Dashboard Tab */}
++          {activeTab === 'dashboard' && (
++            <Dashboard
++              getAppointments={getAppointments}
++              getDoctors={getDoctors}
++              getTodayPayments={getTodayPayments}
++              getRevenueStats={getRevenueStats}
++              currentUser={currentUser}
++              setActiveTab={setActiveTab}
++            />
++          )}
++
+           {activeTab === 'prescription' && ['Admin', 'Doctor'].includes(currentUser.role) && (
+             <div className="tab-content unified-workspace">
+               <div className="section-header" style={{ paddingBottom: '0.5rem', borderBottom: '1px solid rgba(0,0,0,0.05)', marginBottom: '1.25rem' }}>
+@@ -2439,6 +3996,40 @@ function App() {
+             />
+           )}
+ 
++          {activeTab === 'ipd' && (
++            <IPDModule
++              getWards={getWards}
++              getBeds={getBeds}
++              saveBed={saveBed}
++              getAdmissions={getAdmissions}
++              admitPatient={admitPatient}
++              dischargePatient={dischargePatient}
++              getDoctors={getDoctors}
++              getPatients={getPatients}
++            />
++          )}
++
++          {activeTab === 'lab' && (
++            <LabModule
++              getLabCatalog={getLabCatalog}
++              getLabResults={getLabResults}
++              saveLabResult={saveLabResult}
++              updateLabResult={updateLabResult}
++              getPatients={getPatients}
++            />
++          )}
++
++          {activeTab === 'pharmacy' && (
++            <PharmacyModule
++              getPharmacyInventory={getPharmacyInventory}
++              saveInventoryItem={saveInventoryItem}
++              updateInventoryItem={updateInventoryItem}
++              deleteInventoryItem={deleteInventoryItem}
++              recordPharmacySale={recordPharmacySale}
++              getPharmacySales={getPharmacySales}
++            />
++          )}
++
+           {activeTab === 'settings' && (
+             <div className="tab-content unified-workspace">
+               <div className="section-header">
